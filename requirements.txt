@@ -1,0 +1,10 @@
+atproto==0.0.46
+python-telegram-bot==20.4
+discord.py==2.3.2
+python-dotenv==1.0.0
+aiohttp==3.9.1
+pydantic==2.5.3
+aiohttp-session==2.12.0
+aiohttp-cors==0.7.0
+cryptography==41.0.7
+selenium==4.18.1

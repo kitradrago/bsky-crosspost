@@ -1,0 +1,55 @@
+version: '3.8'
+
+networks:
+  appserv-net:
+    driver: bridge
+    name: appserv-net
+
+services:
+  selenium:
+    image: selenium/standalone-chrome:latest
+    container_name: selenium
+    restart: unless-stopped
+    networks:
+      - appserv-net
+    shm_size: '2gb'
+    environment:
+      - SE_NODE_MAX_SESSIONS=2
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+
+  bluesky-crosspost:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bluesky-crosspost
+    restart: unless-stopped
+    networks:
+      - appserv-net
+    ports:
+      - "2759:2759"
+    volumes:
+      - ${CONFIG_DIR:-./config}:/config
+    depends_on:
+      - selenium
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - BLUESKY_HANDLE=${BLUESKY_HANDLE}
+      - BLUESKY_PASSWORD=${BLUESKY_PASSWORD}
+      - BLUESKY_TARGET_HANDLE=${BLUESKY_TARGET_HANDLE}
+      - BLUESKY_CHECK_INTERVAL=${BLUESKY_CHECK_INTERVAL:-300}
+      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-false}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHANNEL_ID=${TELEGRAM_CHANNEL_ID}
+      - DISCORD_ENABLED=${DISCORD_ENABLED:-false}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+      - FURAFFINITY_ENABLED=${FURAFFINITY_ENABLED:-false}
+      - FURAFFINITY_USERNAME=${FURAFFINITY_USERNAME}
+      - FURAFFINITY_PASSWORD=${FURAFFINITY_PASSWORD}
+      - SELENIUM_URL=http://selenium:4444/wd/hub
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - DATA_DIR=/config/data
+      - LOG_DIR=/config/logs
+      - WEBUI_PORT=2759

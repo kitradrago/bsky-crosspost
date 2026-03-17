@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>bluesky-crosspost</Name>
+  <Repository>your-github-username/bluesky-crosspost</Repository>
+  <Registry>https://github.com</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/your-github-username/bluesky-crosspost/issues</Support>
+  <Overview>Automatically cross-post Bluesky posts to Telegram and Discord with a web-based management interface.</Overview>
+  <Category>Social Media</Category>
+  <WebUI>https://[IP]:[PORT:2759]</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/your-github-username/bluesky-crosspost/main/unraid-docker-template.xml</TemplateURL>
+  <Icon>https://cdn.bsky.app/img/logo_256.png</Icon>
+  <Project>https://github.com/your-github-username/bluesky-crosspost</Project>
+  <Date>2026-03-17</Date>
+  <Changes>
+    ### 2026-03-17
+    - Added web-based configuration UI
+    - Password encryption support
+    - Unified /config mount for all data
+    - Support for generic Docker and Unraid deployments
+  </Changes>
+  <Posting>true</Posting>
+  <Changelog>https://github.com/your-github-username/bluesky-crosspost/releases</Changelog>
+  
+  <Variables>
+    <Variable>
+      <Name>CONFIG_DIR</Name>
+      <Description>Path for storing configuration, logs, and data files</Description>
+      <Default>/mnt/user/appdata/bluesky-crosspost</Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>WEBUI_PORT</Name>
+      <Description>Web UI port (default 2759)</Description>
+      <Default>2759</Default>
+      <Mode>advanced</Mode>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>LOG_LEVEL</Name>
+      <Description>Logging level: DEBUG, INFO, WARNING, ERROR</Description>
+      <Default>INFO</Default>
+      <Mode>advanced</Mode>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>BLUESKY_HANDLE</Name>
+      <Description>Your Bluesky handle (e.g., user.bsky.social)</Description>
+      <Default></Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>BLUESKY_PASSWORD</Name>
+      <Description>Your Bluesky app password (NOT your login password!)</Description>
+      <Default></Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>BLUESKY_TARGET_HANDLE</Name>
+      <Description>Account to monitor for posts (can be same as BLUESKY_HANDLE)</Description>
+      <Default></Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>BLUESKY_CHECK_INTERVAL</Name>
+      <Description>How often to check for new posts (seconds)</Description>
+      <Default>300</Default>
+      <Mode>advanced</Mode>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>TELEGRAM_ENABLED</Name>
+      <Description>Enable Telegram posting (true/false)</Description>
+      <Default>false</Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>TELEGRAM_BOT_TOKEN</Name>
+      <Description>Telegram bot token from @BotFather</Description>
+      <Default></Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>TELEGRAM_CHANNEL_ID</Name>
+      <Description>Telegram channel ID to post to</Description>
+      <Default></Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>DISCORD_ENABLED</Name>
+      <Description>Enable Discord posting (true/false)</Description>
+      <Default>false</Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>DISCORD_BOT_TOKEN</Name>
+      <Description>Discord bot token from Developer Portal</Description>
+      <Default></Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>DISCORD_CHANNEL_ID</Name>
+      <Description>Discord channel ID to post to</Description>
+      <Default></Default>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>ADMIN_USERNAME</Name>
+      <Description>Username for web interface login</Description>
+      <Default>admin</Default>
+      <Mode>advanced</Mode>
+      <Scope>compose</Scope>
+    </Variable>
+    <Variable>
+      <Name>ADMIN_PASSWORD</Name>
+      <Description>Password for web interface login (will be encrypted)</Description>
+      <Default>admin</Default>
+      <Mode>advanced</Mode>
+      <Scope>compose</Scope>
+    </Variable>
+  </Variables>
+
+  <Ports>
+    <Port>
+      <HostPort>2759</HostPort>
+      <ContainerPort>2759</ContainerPort>
+      <Protocol>tcp</Protocol>
+      <Description>Web UI Port</Description>
+      <Access>external</Access>
+      <UI>Yes</UI>
+    </Port>
+  </Ports>
+
+  <Volumes>
+    <Volume>
+      <HostPath>/mnt/user/appdata/bluesky-crosspost</HostPath>
+      <ContainerPath>/config</ContainerPath>
+      <Mode>rw</Mode>
+      <Description>Configuration, logs, and data storage</Description>
+      <Access>rw</Access>
+    </Volume>
+  </Volumes>
+
+  <Environment>
+    <Variable>
+      <Name>PYTHONUNBUFFERED</Name>
+      <Value>1</Value>
+    </Variable>
+  </Environment>
+
+  <Networking>
+    <Mode>bridge</Mode>
+    <Publish>
+      <Port>
+        <HostPort>2759</HostPort>
+        <ContainerPort>2759</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+    </Publish>
+  </Networking>
+
+  <DonateText>If you find this useful, consider supporting the developer</DonateText>
+  <DonateLink>https://github.com/your-github-username</DonateLink>
+
+  <Description>
+    Automatically cross-post Bluesky posts to Telegram and Discord channels with a beautiful web-based configuration interface.
+
+    **Features:**
+    - 🚀 Auto-monitor Bluesky account and cross-post to Telegram & Discord
+    - 🌐 Web-based UI for easy configuration
+    - 🔐 Encrypted password storage
+    - 📊 Activity dashboard with post history
+    - 📋 Real-time system logs
+    - 🔄 One-click restart with settings sync
+
+    **Quick Start:**
+    1. Set your Bluesky handle and app password
+    2. (Optional) Add Telegram bot token and channel ID
+    3. (Optional) Add Discord bot token and channel ID
+    4. Access web UI at https://[your-ip]:2759
+    5. Login with admin/admin (change password in web UI)
+
+    **Notes:**
+    - Use an **app password** from Bluesky Settings, NOT your login password
+    - Get Telegram bot token from @BotFather on Telegram
+    - Get Discord bot token from Discord Developer Portal
+    - All configuration can be done through the web UI
+    - Passwords are encrypted before being stored
+    - Logs stored in /mnt/user/appdata/bluesky-crosspost/logs/
+  </Description>
+
+</Container>
