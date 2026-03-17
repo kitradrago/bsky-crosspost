@@ -247,7 +247,7 @@ class WebUI:
                        'log_level']:
                 if key in data and data[key] is not None and str(data[key]) != '':
                     env_var = key.upper()
-                    value_str = str(data[key])
+                    value_str = str(data[key]).lower() if isinstance(data[key], bool) else str(data[key])
                     env_content = self._update_env_var(env_content, env_var, value_str)
                     os.environ[env_var] = value_str
                     if len(value_str) > 20:
@@ -555,7 +555,8 @@ class WebUI:
         .page.active {display: block; animation: fadeIn 0.3s;}
         @keyframes fadeIn {from {opacity: 0; transform: translateY(10px);} to {opacity: 1; transform: translateY(0);}}
         .card {background: var(--card-bg); padding: 30px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px; border: 1px solid var(--border-color);}
-        .card h2 {color: var(--text-primary); margin-bottom: 25px; font-size: 20px;}
+        .card-header {display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;}
+        .card h2 {color: var(--text-primary); margin-bottom: 0; font-size: 20px;}
         .form-row {display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; margin-bottom: 20px;}
         .form-field {display: flex; flex-direction: column;}
         .form-field label {font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;}
@@ -563,6 +564,12 @@ class WebUI:
         .form-field input:focus, .form-field select:focus {outline: none; border-color: var(--accent);}
         .form-field input[type="checkbox"] {width: auto; margin-right: 8px;}
         .helper-text {font-size: 12px; color: var(--text-secondary); margin-top: 5px;}
+        .toggle-switch {position: relative; display: inline-block; width: 60px; height: 34px;}
+        .toggle-switch input {opacity: 0; width: 0; height: 0;}
+        .toggle-slider {position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: 0.4s; border-radius: 34px;}
+        .toggle-slider:before {position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: 0.4s; border-radius: 50%;}
+        input:checked + .toggle-slider {background-color: var(--accent);}
+        input:checked + .toggle-slider:before {transform: translateX(26px);}
         .btn {padding: 12px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s;}
         .btn-primary {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;}
         .btn-primary:hover {transform: translateY(-2px); box-shadow: 0 8px 16px rgba(102,126,234,0.4);}
@@ -586,7 +593,8 @@ class WebUI:
         .status-badge.success {background: #d4edda; color: #155724;}
         .status-badge.failed {background: #f8d7da; color: #721c24;}
         .log-controls {display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center;}
-        @media (max-width: 768px) {.navbar {flex-direction: column; gap: 15px;} .form-row {grid-template-columns: 1fr;} .container {padding: 20px 15px;}}
+        .disabled-state {opacity: 0.6; pointer-events: none;}
+        @media (max-width: 768px) {.navbar {flex-direction: column; gap: 15px;} .form-row {grid-template-columns: 1fr;} .container {padding: 20px 15px;} .card-header {flex-direction: column; align-items: flex-start; gap: 15px;}}
     </style>
 </head>
 <body>
@@ -605,10 +613,10 @@ class WebUI:
         <div class="navbar"><div class="navbar-left"><h1>🚀 Bluesky Crosspost</h1><span class="status-indicator"></span></div><div class="navbar-right"><div id="restartBanner" class="restart-banner hidden">⚠️ Settings changed <button class="restart-btn" onclick="restartContainer()">Restart Now</button></div><button class="theme-toggle" onclick="toggleTheme()">🌙</button><button class="logout-btn" onclick="handleLogout()">Sign Out</button></div></div>
         <div class="container">
             <div class="tabs"><button class="tab-btn active" onclick="showTab('setup')">⚙️ Setup</button><button class="tab-btn" onclick="showTab('activity')">📊 Activity</button><button class="tab-btn" onclick="showTab('logs')">📋 Logs</button><button class="tab-btn" onclick="showTab('admin')">🔐 Admin</button></div>
-            <div class="page active" id="setupPage"><div class="card"><h2>🔐 Bluesky Account</h2><div class="form-row"><div class="form-field"><label>Bluesky Handle</label><input type="text" id="blueskyHandle" placeholder="example.bsky.social"></div><div class="form-field"><label>App Password</label><input type="password" id="blueskyPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Account to Monitor</label><input type="text" id="blueskyTargetHandle" placeholder="furthemore.org"></div><div class="form-field"><label>Check Interval (sec)</label><input type="number" id="blueskyCheckInterval" placeholder="300" min="10"></div></div></div><div class="card"><h2>💬 Telegram Settings</h2><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="telegramBotToken" placeholder="123456:ABC-DEF..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="telegramChannelId" placeholder="-1001234567890"></div></div></div><div class="card"><h2>🎮 Discord Settings</h2><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="discordBotToken" placeholder="MTA4NzQ1..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="discordChannelId" placeholder="1087459487405..."></div></div></div><div class="card"><h2>🐾 FurAffinity Settings</h2><div class="form-row"><div class="form-field"><label>Username</label><input type="text" id="furAffinityUsername" placeholder="your_username"></div><div class="form-field"><label>Password</label><input type="password" id="furAffinityPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Submission Type</label><select id="furAffinitySubmissionType"><option value="journal">Journal Entry</option><option value="image">Image Submission</option></select><div class="helper-text">Choose how to submit posts</div></div><div class="form-field"><label>Image Category</label><select id="furAffinitySubmissionCategory"><option value="1">Artwork/Digital</option><option value="2">Photography</option><option value="3">Traditional Art</option><option value="4">Sculpture</option><option value="5">Other</option></select></div></div><div class="form-row"><div class="form-field"><label>Rating</label><select id="furAffinitySubmissionRating"><option value="general">General</option><option value="mature">Mature</option><option value="adult">Adult</option></select></div><div class="form-field"><label><input type="checkbox" id="furAffinityDownloadImages"> Download & Submit Images</label><div class="helper-text">Auto-download images from posts</div></div></div></div><button class="btn btn-primary" onclick="saveConfig()" style="margin-top: 20px;">💾 Save Settings</button><div id="setupAlert"></div></div>
+            <div class="page active" id="setupPage"><div class="card"><div class="card-header"><h2>🔐 Bluesky Account</h2></div><div class="form-row"><div class="form-field"><label>Bluesky Handle</label><input type="text" id="blueskyHandle" placeholder="example.bsky.social"></div><div class="form-field"><label>App Password</label><input type="password" id="blueskyPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Account to Monitor</label><input type="text" id="blueskyTargetHandle" placeholder="furthemore.org"></div><div class="form-field"><label>Check Interval (sec)</label><input type="number" id="blueskyCheckInterval" placeholder="300" min="10"></div></div></div><div class="card"><div class="card-header"><h2>💬 Telegram Settings</h2><label class="toggle-switch"><input type="checkbox" id="telegramEnabled"><span class="toggle-slider"></span></label></div><div id="telegramSettings"><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="telegramBotToken" placeholder="123456:ABC-DEF..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="telegramChannelId" placeholder="-1001234567890"></div></div></div></div><div class="card"><div class="card-header"><h2>🎮 Discord Settings</h2><label class="toggle-switch"><input type="checkbox" id="discordEnabled"><span class="toggle-slider"></span></label></div><div id="discordSettings"><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="discordBotToken" placeholder="MTA4NzQ1..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="discordChannelId" placeholder="1087459487405..."></div></div></div></div><div class="card"><div class="card-header"><h2>🐾 FurAffinity Settings</h2><label class="toggle-switch"><input type="checkbox" id="furAffinityEnabled"><span class="toggle-slider"></span></label></div><div id="furAffinitySettings"><div class="form-row"><div class="form-field"><label>Username</label><input type="text" id="furAffinityUsername" placeholder="your_username"></div><div class="form-field"><label>Password</label><input type="password" id="furAffinityPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Submission Type</label><select id="furAffinitySubmissionType"><option value="journal">Journal Entry</option><option value="image">Image Submission</option></select><div class="helper-text">Choose how to submit posts</div></div><div class="form-field"><label>Image Category</label><select id="furAffinitySubmissionCategory"><option value="1">Artwork/Digital</option><option value="2">Photography</option><option value="3">Traditional Art</option><option value="4">Sculpture</option><option value="5">Other</option></select></div></div><div class="form-row"><div class="form-field"><label>Rating</label><select id="furAffinitySubmissionRating"><option value="general">General</option><option value="mature">Mature</option><option value="adult">Adult</option></select></div><div class="form-field"><label><input type="checkbox" id="furAffinityDownloadImages"> Download & Submit Images</label><div class="helper-text">Auto-download images from posts</div></div></div></div></div><button class="btn btn-primary" onclick="saveConfig()" style="margin-top: 20px;">💾 Save Settings</button><div id="setupAlert"></div></div>
             <div class="page" id="activityPage"><div class="card"><h2>📊 Activity Overview</h2><div class="stats-grid"><div class="stat-card"><h3>Posts Processed</h3><div class="number" id="totalPosts">-</div></div><div class="stat-card"><h3>Successful</h3><div class="number" id="successfulPosts">-</div></div><div class="stat-card"><h3>Telegram</h3><div class="number" id="telegramCount">-</div></div><div class="stat-card"><h3>Discord</h3><div class="number" id="discordCount">-</div></div><div class="stat-card"><h3>FurAffinity</h3><div class="number" id="furAffinityCount">-</div></div></div></div><div class="card"><h2>📝 Recent Posts</h2><table class="posts-table"><thead><tr><th>Date & Time</th><th>Post</th><th>Status</th><th>Telegram</th><th>Discord</th><th>FurAffinity</th></tr></thead><tbody id="postsTableBody"><tr><td colspan="6" style="text-align: center; padding: 40px;">Loading...</td></tr></tbody></table></div></div>
             <div class="page" id="logsPage"><div class="card"><h2>📋 System Logs</h2><div class="log-controls"><div class="form-field" style="margin: 0; flex: 1; min-width: 150px;"><label>Show last:</label><select id="logLines" onchange="loadLogs()" style="margin-top: 4px;"><option value="50">50 lines</option><option value="100" selected>100 lines</option><option value="200">200 lines</option><option value="500">500 lines</option></select></div><button class="btn btn-secondary" onclick="loadLogs()" style="margin-top: 22px;">🔄 Refresh Logs</button><label style="margin-top: 22px;"><input type="checkbox" id="autoRefreshLogs" checked> Auto-refresh</label></div><div class="logs-container" id="logsContainer"><div class="log-line">Loading...</div></div></div></div>
-            <div class="page" id="adminPage"><div class="card"><h2>🔐 Admin Settings</h2><div class="form-row"><div class="form-field"><label>Admin Username</label><input type="text" id="adminUsername" placeholder="admin" autocomplete="off"><div class="helper-text">Username for web interface</div></div><div class="form-field"><label>Admin Password</label><input type="password" id="adminPassword" placeholder="•••••��••" autocomplete="new-password"><div class="helper-text">Password for web interface (will be encrypted)</div></div></div><button class="btn btn-primary" onclick="saveAdminSettings()" style="margin-top: 20px;">💾 Save Admin Settings</button><div id="adminAlert"></div></div></div>
+            <div class="page" id="adminPage"><div class="card"><h2>🔐 Admin Settings</h2><div class="form-row"><div class="form-field"><label>Admin Username</label><input type="text" id="adminUsername" placeholder="admin" autocomplete="off"><div class="helper-text">Username for web interface</div></div><div class="form-field"><label>Admin Password</label><input type="password" id="adminPassword" placeholder="••••••••" autocomplete="new-password"><div class="helper-text">Password for web interface (will be encrypted)</div></div></div><button class="btn btn-primary" onclick="saveAdminSettings()" style="margin-top: 20px;">💾 Save Admin Settings</button><div id="adminAlert"></div></div></div>
         </div>
     </div>
     <script>
@@ -630,7 +638,7 @@ class WebUI:
                             await loadConfig();
                             await loadPosts();
                             await loadLogs();
-                            // Only refresh Activity tab by default, NOT logs
+                            setupToggleListeners();
                             refreshInterval = setInterval(() => {
                                 const tab = document.querySelector('.tab-btn.active');
                                 if (tab && tab.textContent.includes('Activity')) {
@@ -648,6 +656,18 @@ class WebUI:
             localStorage.removeItem('authToken');
             showLogin();
         };
+        
+        function setupToggleListeners() {
+            document.getElementById('telegramEnabled').addEventListener('change', function() {
+                document.getElementById('telegramSettings').classList.toggle('disabled-state', !this.checked);
+            });
+            document.getElementById('discordEnabled').addEventListener('change', function() {
+                document.getElementById('discordSettings').classList.toggle('disabled-state', !this.checked);
+            });
+            document.getElementById('furAffinityEnabled').addEventListener('change', function() {
+                document.getElementById('furAffinitySettings').classList.toggle('disabled-state', !this.checked);
+            });
+        }
         
         function loadTheme() {
             fetch('/api/admin/theme').then(r => r.json()).then(data => {
@@ -723,6 +743,7 @@ class WebUI:
                     await loadConfig();
                     await loadPosts();
                     await loadLogs();
+                    setupToggleListeners();
                     refreshInterval = setInterval(() => {
                         const tab = document.querySelector('.tab-btn.active');
                         if (tab && tab.textContent.includes('Activity')) {
@@ -774,14 +795,22 @@ class WebUI:
                 document.getElementById('blueskyHandle').value = cfg.bluesky_handle || '';
                 document.getElementById('blueskyTargetHandle').value = cfg.bluesky_target_handle || '';
                 document.getElementById('blueskyCheckInterval').value = cfg.bluesky_check_interval || '300';
+                document.getElementById('telegramEnabled').checked = cfg.telegram_enabled || false;
                 document.getElementById('telegramChannelId').value = cfg.telegram_channel_id || '';
+                document.getElementById('discordEnabled').checked = cfg.discord_enabled || false;
                 document.getElementById('discordChannelId').value = cfg.discord_channel_id || '';
+                document.getElementById('furAffinityEnabled').checked = cfg.furaffinity_enabled || false;
                 document.getElementById('furAffinitySubmissionType').value = cfg.furaffinity_submission_type || 'journal';
                 document.getElementById('furAffinitySubmissionCategory').value = cfg.furaffinity_submission_category || '1';
                 document.getElementById('furAffinitySubmissionRating').value = cfg.furaffinity_submission_rating || 'general';
                 document.getElementById('furAffinityDownloadImages').checked = cfg.furaffinity_download_images || false;
                 const adm = await (await apiCall('/api/admin/settings')).json();
                 document.getElementById('adminUsername').value = adm.admin_username || '';
+                
+                // Update disabled states
+                document.getElementById('telegramSettings').classList.toggle('disabled-state', !cfg.telegram_enabled);
+                document.getElementById('discordSettings').classList.toggle('disabled-state', !cfg.discord_enabled);
+                document.getElementById('furAffinitySettings').classList.toggle('disabled-state', !cfg.furaffinity_enabled);
             } catch (e) {
                 console.error(e);
             }
@@ -794,10 +823,13 @@ class WebUI:
                     bluesky_password: document.getElementById('blueskyPassword').value,
                     bluesky_target_handle: document.getElementById('blueskyTargetHandle').value,
                     bluesky_check_interval: parseInt(document.getElementById('blueskyCheckInterval').value) || 300,
+                    telegram_enabled: document.getElementById('telegramEnabled').checked,
                     telegram_bot_token: document.getElementById('telegramBotToken').value,
                     telegram_channel_id: document.getElementById('telegramChannelId').value,
+                    discord_enabled: document.getElementById('discordEnabled').checked,
                     discord_bot_token: document.getElementById('discordBotToken').value,
                     discord_channel_id: document.getElementById('discordChannelId').value,
+                    furaffinity_enabled: document.getElementById('furAffinityEnabled').checked,
                     furaffinity_username: document.getElementById('furAffinityUsername').value,
                     furaffinity_password: document.getElementById('furAffinityPassword').value,
                     furaffinity_submission_type: document.getElementById('furAffinitySubmissionType').value,
@@ -865,38 +897,4 @@ class WebUI:
                 document.getElementById('logsContainer').innerHTML = '<div class="log-line">Error: ' + e.message + '</div>';
             }
         }
-    </script>
-</body>
-</html>
-"""
     
-    async def start(self, port: int = 2759):
-        """Start the web server"""
-        runner = web.AppRunner(self.app)
-        await runner.setup()
-        
-        cert_file, key_file = self._ensure_certificate()
-        
-        if cert_file and key_file:
-            try:
-                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                ssl_context.load_cert_chain(cert_file, key_file)
-                site = web.TCPSite(runner, '0.0.0.0', port, ssl_context=ssl_context)
-                logger.info(f"✅ Web UI started on https://0.0.0.0:{port}")
-            except ssl.SSLError as e:
-                logger.error(f"SSL error: {e}. Using HTTP")
-                site = web.TCPSite(runner, '0.0.0.0', port)
-        else:
-            site = web.TCPSite(runner, '0.0.0.0', port)
-            logger.warning(f"⚠️ Web UI started on http://0.0.0.0:{port}")
-        
-        await site.start()
-
-
-def create_webui(config, data_dir: str = "/config/data") -> WebUI:
-    """Factory function to get or create the singleton WebUI instance"""
-    global _webui_instance
-    if _webui_instance is None:
-        _webui_instance = WebUI(config, data_dir)
-        logger.info(f"✅ Created WebUI singleton")
-    return _webui_instance
