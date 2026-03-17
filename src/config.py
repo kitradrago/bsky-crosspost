@@ -29,6 +29,11 @@ class Config:
     FURAFFINITY_ENABLED = os.getenv('FURAFFINITY_ENABLED', 'false').lower() == 'true'
     FURAFFINITY_USERNAME = os.getenv('FURAFFINITY_USERNAME', '')
     FURAFFINITY_PASSWORD = os.getenv('FURAFFINITY_PASSWORD', '')
+    FURAFFINITY_SUBMISSION_TYPE = os.getenv('FURAFFINITY_SUBMISSION_TYPE', 'journal')  # 'journal' or 'image'
+    FURAFFINITY_SUBMISSION_CATEGORY = os.getenv('FURAFFINITY_SUBMISSION_CATEGORY', '1')  # 1 = Artwork/Digital
+    FURAFFINITY_SUBMISSION_RATING = os.getenv('FURAFFINITY_SUBMISSION_RATING', 'general')  # general, mature, adult
+    FURAFFINITY_DOWNLOAD_IMAGES = os.getenv('FURAFFINITY_DOWNLOAD_IMAGES', 'false').lower() == 'true'
+    FURAFFINITY_IMAGE_DIR = os.getenv('FURAFFINITY_IMAGE_DIR', '/config/data/fa_images')
     SELENIUM_URL = os.getenv('SELENIUM_URL', 'http://selenium:4444/wd/hub')
     
     # Admin

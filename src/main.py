@@ -19,7 +19,8 @@ def ensure_directories():
         '/config',
         '/config/logs',
         '/config/data',
-        '/config/data/certs'
+        '/config/data/certs',
+        Config.FURAFFINITY_IMAGE_DIR,
     ]
     for directory in directories:
         os.makedirs(directory, exist_ok=True)
@@ -241,17 +242,43 @@ class CrosspostManager:
                 except Exception as e:
                     logger.error(f"Discord send error: {e}")
             
-            # Post journal to FurAffinity
+            # Post to FurAffinity (journal or image)
             if self.furaffinity:
                 try:
-                    journal_title = f"Cross-post from {author}"
-                    journal_content = f"{text}\n\n🔗 Original post: {bluesky_url}"
-                    furaffinity_sent = await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        self.furaffinity.post_journal,
-                        journal_title,
-                        journal_content,
-                    )
+                    submission_type = Config.FURAFFINITY_SUBMISSION_TYPE.lower()
+                    
+                    if submission_type == 'image':
+                        # Try to extract image URLs from post
+                        image_urls = post.get('images', [])
+                        if image_urls and Config.FURAFFINITY_DOWNLOAD_IMAGES:
+                            # Download and submit first image
+                            for image_url in image_urls[:1]:  # Only submit first image
+                                local_path = await self.furaffinity.download_image(image_url)
+                                if local_path:
+                                    title = f"Cross-post from {author}"
+                                    description = f"{text}\n\n🔗 Original post: {bluesky_url}"
+                                    furaffinity_sent = await asyncio.get_event_loop().run_in_executor(
+                                        None,
+                                        self.furaffinity.post_image,
+                                        local_path,
+                                        title,
+                                        description,
+                                        Config.FURAFFINITY_SUBMISSION_CATEGORY,
+                                        Config.FURAFFINITY_SUBMISSION_RATING,
+                                    )
+                                    break
+                        else:
+                            logger.warning(f"No images found or download disabled for image submission")
+                    else:
+                        # Default to journal posting
+                        journal_title = f"Cross-post from {author}"
+                        journal_content = f"{text}\n\n🔗 Original post: {bluesky_url}"
+                        furaffinity_sent = await asyncio.get_event_loop().run_in_executor(
+                            None,
+                            self.furaffinity.post_journal,
+                            journal_title,
+                            journal_content,
+                        )
                 except Exception as e:
                     logger.error(f"FurAffinity send error: {e}")
             

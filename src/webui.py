@@ -196,6 +196,7 @@ class WebUI:
                 'bluesky_connected': self.config.BLUESKY_HANDLE != '',
                 'telegram_configured': self.config.TELEGRAM_ENABLED,
                 'discord_configured': self.config.DISCORD_ENABLED,
+                'furaffinity_configured': self.config.FURAFFINITY_ENABLED,
             })
         except Exception as e:
             logger.error(f"Error getting status: {e}")
@@ -216,6 +217,11 @@ class WebUI:
                 'telegram_channel_id': os.getenv('TELEGRAM_CHANNEL_ID', ''),
                 'discord_enabled': os.getenv('DISCORD_ENABLED', 'false').lower() == 'true',
                 'discord_channel_id': os.getenv('DISCORD_CHANNEL_ID', ''),
+                'furaffinity_enabled': os.getenv('FURAFFINITY_ENABLED', 'false').lower() == 'true',
+                'furaffinity_submission_type': os.getenv('FURAFFINITY_SUBMISSION_TYPE', 'journal'),
+                'furaffinity_submission_category': os.getenv('FURAFFINITY_SUBMISSION_CATEGORY', '1'),
+                'furaffinity_submission_rating': os.getenv('FURAFFINITY_SUBMISSION_RATING', 'general'),
+                'furaffinity_download_images': os.getenv('FURAFFINITY_DOWNLOAD_IMAGES', 'false').lower() == 'true',
                 'log_level': os.getenv('LOG_LEVEL', 'INFO'),
             })
         except Exception as e:
@@ -234,13 +240,17 @@ class WebUI:
             
             for key in ['bluesky_handle', 'bluesky_password', 'bluesky_target_handle', 'bluesky_check_interval',
                        'telegram_enabled', 'telegram_bot_token', 'telegram_channel_id',
-                       'discord_enabled', 'discord_bot_token', 'discord_channel_id', 'log_level']:
+                       'discord_enabled', 'discord_bot_token', 'discord_channel_id',
+                       'furaffinity_enabled', 'furaffinity_username', 'furaffinity_password',
+                       'furaffinity_submission_type', 'furaffinity_submission_category',
+                       'furaffinity_submission_rating', 'furaffinity_download_images',
+                       'log_level']:
                 if key in data and data[key] is not None and str(data[key]) != '':
                     env_var = key.upper()
                     value_str = str(data[key])
                     env_content = self._update_env_var(env_content, env_var, value_str)
                     os.environ[env_var] = value_str
-                    logger.info(f"  ✓ Set {env_var}={value_str[:20]}...")
+                    logger.info(f"  ✓ Set {env_var}={value_str[:20] if len(value_str) > 20 else value_str}...")
             
             self._write_env_file(env_content)
             logger.info(f"✅ Config updated successfully")
@@ -384,6 +394,7 @@ class WebUI:
                 'failed': sum(1 for p in posts if p.get('status') == 'failed'),
                 'telegram_sent': sum(1 for p in posts if p.get('telegram_sent')),
                 'discord_sent': sum(1 for p in posts if p.get('discord_sent')),
+                'furaffinity_sent': sum(1 for p in posts if p.get('furaffinity_sent')),
             })
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
@@ -591,8 +602,8 @@ class WebUI:
         <div class="navbar"><div class="navbar-left"><h1>🚀 Bluesky Crosspost</h1><span class="status-indicator"></span></div><div class="navbar-right"><div id="restartBanner" class="restart-banner hidden">⚠️ Settings changed <button class="restart-btn" onclick="restartContainer()">Restart Now</button></div><button class="theme-toggle" onclick="toggleTheme()">🌙</button><button class="logout-btn" onclick="handleLogout()">Sign Out</button></div></div>
         <div class="container">
             <div class="tabs"><button class="tab-btn active" onclick="showTab('setup')">⚙️ Setup</button><button class="tab-btn" onclick="showTab('activity')">📊 Activity</button><button class="tab-btn" onclick="showTab('logs')">📋 Logs</button><button class="tab-btn" onclick="showTab('admin')">🔐 Admin</button></div>
-            <div class="page active" id="setupPage"><div class="card"><h2>🔐 Bluesky Account</h2><div class="form-row"><div class="form-field"><label>Bluesky Handle</label><input type="text" id="blueskyHandle" placeholder="example.bsky.social"></div><div class="form-field"><label>App Password</label><input type="password" id="blueskyPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Account to Monitor</label><input type="text" id="blueskyTargetHandle" placeholder="furthemore.org"></div><div class="form-field"><label>Check Interval (sec)</label><input type="number" id="blueskyCheckInterval" placeholder="300" min="10"></div></div></div><div class="card"><h2>💬 Telegram Settings</h2><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="telegramBotToken" placeholder="123456:ABC-DEF..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="telegramChannelId" placeholder="-1001234567890"></div></div></div><div class="card"><h2>🎮 Discord Settings</h2><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="discordBotToken" placeholder="MTA4NzQ1..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="discordChannelId" placeholder="1087459487405..."></div></div></div><button class="btn btn-primary" onclick="saveConfig()" style="margin-top: 20px;">💾 Save Settings</button><div id="setupAlert"></div></div>
-            <div class="page" id="activityPage"><div class="card"><h2>📊 Activity Overview</h2><div class="stats-grid"><div class="stat-card"><h3>Posts Processed</h3><div class="number" id="totalPosts">-</div></div><div class="stat-card"><h3>Successful</h3><div class="number" id="successfulPosts">-</div></div><div class="stat-card"><h3>Telegram</h3><div class="number" id="telegramCount">-</div></div><div class="stat-card"><h3>Discord</h3><div class="number" id="discordCount">-</div></div></div></div><div class="card"><h2>📝 Recent Posts</h2><table class="posts-table"><thead><tr><th>Date & Time</th><th>Post</th><th>Status</th><th>Telegram</th><th>Discord</th></tr></thead><tbody id="postsTableBody"><tr><td colspan="5" style="text-align: center; padding: 40px;">Loading...</td></tr></tbody></table></div></div>
+            <div class="page active" id="setupPage"><div class="card"><h2>🔐 Bluesky Account</h2><div class="form-row"><div class="form-field"><label>Bluesky Handle</label><input type="text" id="blueskyHandle" placeholder="example.bsky.social"></div><div class="form-field"><label>App Password</label><input type="password" id="blueskyPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Account to Monitor</label><input type="text" id="blueskyTargetHandle" placeholder="furthemore.org"></div><div class="form-field"><label>Check Interval (sec)</label><input type="number" id="blueskyCheckInterval" placeholder="300" min="10"></div></div></div><div class="card"><h2>💬 Telegram Settings</h2><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="telegramBotToken" placeholder="123456:ABC-DEF..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="telegramChannelId" placeholder="-1001234567890"></div></div></div><div class="card"><h2>🎮 Discord Settings</h2><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="discordBotToken" placeholder="MTA4NzQ1..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="discordChannelId" placeholder="1087459487405..."></div></div></div><div class="card"><h2>🐾 FurAffinity Settings</h2><div class="form-row"><div class="form-field"><label>Username</label><input type="text" id="furAffinityUsername" placeholder="your_username"></div><div class="form-field"><label>Password</label><input type="password" id="furAffinityPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Submission Type</label><select id="furAffinitySubmissionType"><option value="journal">Journal Entry</option><option value="image">Image Submission</option></select><div class="helper-text">Choose how to submit posts</div></div><div class="form-field"><label>Image Category</label><select id="furAffinitySubmissionCategory"><option value="1">Artwork/Digital</option><option value="2">Photography</option><option value="3">Traditional Art</option><option value="4">Sculpture</option><option value="5">Other</option></select></div></div><div class="form-row"><div class="form-field"><label>Rating</label><select id="furAffinitySubmissionRating"><option value="general">General</option><option value="mature">Mature</option><option value="adult">Adult</option></select></div><div class="form-field"><label><input type="checkbox" id="furAffinityDownloadImages"> Download & Submit Images</label><div class="helper-text">Auto-download images from posts</div></div></div></div><button class="btn btn-primary" onclick="saveConfig()" style="margin-top: 20px;">💾 Save Settings</button><div id="setupAlert"></div></div>
+            <div class="page" id="activityPage"><div class="card"><h2>📊 Activity Overview</h2><div class="stats-grid"><div class="stat-card"><h3>Posts Processed</h3><div class="number" id="totalPosts">-</div></div><div class="stat-card"><h3>Successful</h3><div class="number" id="successfulPosts">-</div></div><div class="stat-card"><h3>Telegram</h3><div class="number" id="telegramCount">-</div></div><div class="stat-card"><h3>Discord</h3><div class="number" id="discordCount">-</div></div><div class="stat-card"><h3>FurAffinity</h3><div class="number" id="furAffinityCount">-</div></div></div></div><div class="card"><h2>📝 Recent Posts</h2><table class="posts-table"><thead><tr><th>Date & Time</th><th>Post</th><th>Status</th><th>Telegram</th><th>Discord</th><th>FurAffinity</th></tr></thead><tbody id="postsTableBody"><tr><td colspan="6" style="text-align: center; padding: 40px;">Loading...</td></tr></tbody></table></div></div>
             <div class="page" id="logsPage"><div class="card"><h2>📋 System Logs</h2><div class="form-row"><div class="form-field"><label>Show last:</label><select id="logLines" onchange="loadLogs()"><option value="50">50 lines</option><option value="100" selected>100 lines</option><option value="200">200 lines</option><option value="500">500 lines</option></select></div></div><div class="logs-container" id="logsContainer"><div class="log-line">Loading...</div></div></div></div>
             <div class="page" id="adminPage"><div class="card"><h2>🔐 Admin Settings</h2><div class="form-row"><div class="form-field"><label>Admin Username</label><input type="text" id="adminUsername" placeholder="admin" autocomplete="off"><div class="helper-text">Username for web interface</div></div><div class="form-field"><label>Admin Password</label><input type="password" id="adminPassword" placeholder="••••••••" autocomplete="new-password"><div class="helper-text">Password for web interface (will be encrypted)</div></div></div><button class="btn btn-primary" onclick="saveAdminSettings()" style="margin-top: 20px;">💾 Save Admin Settings</button><div id="adminAlert"></div></div></div>
         </div>
@@ -749,6 +760,10 @@ class WebUI:
                 document.getElementById('blueskyCheckInterval').value = cfg.bluesky_check_interval || '300';
                 document.getElementById('telegramChannelId').value = cfg.telegram_channel_id || '';
                 document.getElementById('discordChannelId').value = cfg.discord_channel_id || '';
+                document.getElementById('furAffinitySubmissionType').value = cfg.furaffinity_submission_type || 'journal';
+                document.getElementById('furAffinitySubmissionCategory').value = cfg.furaffinity_submission_category || '1';
+                document.getElementById('furAffinitySubmissionRating').value = cfg.furaffinity_submission_rating || 'general';
+                document.getElementById('furAffinityDownloadImages').checked = cfg.furaffinity_download_images || false;
                 const adm = await (await apiCall('/api/admin/settings')).json();
                 document.getElementById('adminUsername').value = adm.admin_username || '';
             } catch (e) {
@@ -766,7 +781,13 @@ class WebUI:
                     telegram_bot_token: document.getElementById('telegramBotToken').value,
                     telegram_channel_id: document.getElementById('telegramChannelId').value,
                     discord_bot_token: document.getElementById('discordBotToken').value,
-                    discord_channel_id: document.getElementById('discordChannelId').value
+                    discord_channel_id: document.getElementById('discordChannelId').value,
+                    furaffinity_username: document.getElementById('furAffinityUsername').value,
+                    furaffinity_password: document.getElementById('furAffinityPassword').value,
+                    furaffinity_submission_type: document.getElementById('furAffinitySubmissionType').value,
+                    furaffinity_submission_category: document.getElementById('furAffinitySubmissionCategory').value,
+                    furaffinity_submission_rating: document.getElementById('furAffinitySubmissionRating').value,
+                    furaffinity_download_images: document.getElementById('furAffinityDownloadImages').checked
                 });
                 const r = await res.json();
                 document.getElementById('setupAlert').innerHTML = res.ok ? '<div class="alert success">✅ ' + r.message + '</div>' : '<div class="alert error">❌ ' + r.error + '</div>';
@@ -804,8 +825,9 @@ class WebUI:
                 document.getElementById('successfulPosts').textContent = stats.successful || 0;
                 document.getElementById('telegramCount').textContent = stats.telegram_sent || 0;
                 document.getElementById('discordCount').textContent = stats.discord_sent || 0;
+                document.getElementById('furAffinityCount').textContent = stats.furaffinity_sent || 0;
                 const tbody = document.getElementById('postsTableBody');
-                tbody.innerHTML = posts.posts && posts.posts.length ? posts.posts.map(p => '<tr><td>' + new Date(p.posted_at).toLocaleString() + '</td><td>' + p.text.substring(0, 50) + '</td><td><span class="status-badge ' + p.status + '">' + p.status + '</span></td><td>' + (p.telegram_sent ? '✅' : '⏸️') + '</td><td>' + (p.discord_sent ? '✅' : '⏸️') + '</td></tr>').join('') : '<tr><td colspan="5" style="text-align: center; padding: 40px;">No posts</td></tr>';
+                tbody.innerHTML = posts.posts && posts.posts.length ? posts.posts.map(p => '<tr><td>' + new Date(p.posted_at).toLocaleString() + '</td><td>' + p.text.substring(0, 50) + '</td><td><span class="status-badge ' + p.status + '">' + p.status + '</span></td><td>' + (p.telegram_sent ? '✅' : '⏸️') + '</td><td>' + (p.discord_sent ? '✅' : '⏸️') + '</td><td>' + (p.furaffinity_sent ? '✅' : '⏸️') + '</td></tr>').join('') : '<tr><td colspan="6" style="text-align: center; padding: 40px;">No posts</td></tr>';
             } catch (e) {
                 console.error(e);
             }
@@ -864,10 +886,4 @@ class WebUI:
         await site.start()
 
 
-def create_webui(config, data_dir: str = "/config/data") -> WebUI:
-    """Factory function to get or create the singleton WebUI instance"""
-    global _webui_instance
-    if _webui_instance is None:
-        _webui_instance = WebUI(config, data_dir)
-        logger.info(f"✅ Created WebUI singleton")
-    return _webui_instance
+def create_webui(config, data

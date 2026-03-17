@@ -1,6 +1,9 @@
 import logging
 import os
 from typing import Optional
+import aiohttp
+import asyncio
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +104,59 @@ class FurAffinityClient:
         except Exception as e:
             logger.error(f"FurAffinity login error: {e}")
             return False
+
+    # ------------------------------------------------------------------
+    # Image download helper
+    # ------------------------------------------------------------------
+
+    async def download_image(self, image_url: str, max_size_mb: int = 10) -> Optional[str]:
+        """Download an image from URL and save it locally.
+        
+        Args:
+            image_url: URL of the image to download
+            max_size_mb: Maximum file size in MB (FurAffinity limit is typically 10MB)
+        
+        Returns:
+            Local file path if successful, None otherwise
+        """
+        try:
+            # Create images directory if it doesn't exist
+            img_dir = "/config/data/fa_images"
+            os.makedirs(img_dir, exist_ok=True)
+            
+            # Generate unique filename from URL
+            from urllib.parse import urlparse
+            parsed = urlparse(image_url)
+            filename = parsed.path.split('/')[-1]
+            if not filename or len(filename) == 0:
+                filename = f"image_{int(os.times()[4] * 1000)}.jpg"
+            
+            local_path = os.path.join(img_dir, filename)
+            
+            # Download image with aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url, timeout=30) as resp:
+                    if resp.status != 200:
+                        logger.error(f"Failed to download image: HTTP {resp.status}")
+                        return None
+                    
+                    # Check size
+                    content = await resp.read()
+                    size_mb = len(content) / (1024 * 1024)
+                    if size_mb > max_size_mb:
+                        logger.warning(f"Image too large ({size_mb:.2f}MB > {max_size_mb}MB), skipping")
+                        return None
+                    
+                    # Save file
+                    with open(local_path, 'wb') as f:
+                        f.write(content)
+                    
+                    logger.info(f"✅ Downloaded image: {local_path} ({size_mb:.2f}MB)")
+                    return local_path
+        
+        except Exception as e:
+            logger.error(f"Error downloading image: {e}")
+            return None
 
     # ------------------------------------------------------------------
     # Journal posting
@@ -215,7 +271,7 @@ class FurAffinityClient:
 
             wait = WebDriverWait(self.driver, 15)
 
-            # ── Step 1: choose type ──────────────────────────────────────
+            # ── Step 1: choose type ─────────────────────────────────��────
             logger.info("Starting FurAffinity image submission (step 1)…")
             self.driver.get(self.SUBMIT_URL)
 
@@ -271,7 +327,6 @@ class FurAffinityClient:
                 logger.warning(f"Could not set category: {e}")
 
             # Rating
-            # Rating.
             # FurAffinity's internal rating values: 0 = General, 1 = Adult (explicit), 2 = Mature (nudity/violence).
             rating_map = {"general": "0", "mature": "2", "adult": "1"}
             rating_value = rating_map.get(rating.lower(), "0")
