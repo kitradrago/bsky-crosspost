@@ -2,7 +2,7 @@ import asyncio
 import logging
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Set
 
 from config import Config
@@ -132,6 +132,10 @@ class CrosspostManager:
         """Check if a post is a reply (has reply_to field)"""
         return 'reply_to' in post and post['reply_to'] is not None
     
+    def _has_images(self, post: dict) -> bool:
+        """Check if a post has images embedded"""
+        return 'images' in post and isinstance(post['images'], list) and len(post['images']) > 0
+    
     async def initialize(self) -> bool:
         """Initialize all clients and load existing posts"""
         logger.info("Initializing CrosspostManager...")
@@ -221,8 +225,9 @@ class CrosspostManager:
             bluesky_url = self._get_bluesky_post_url(post['uri'])
             author = post.get('display_name') or post['author']
             text = post['text']
+            has_images = self._has_images(post)
             
-            logger.info(f"Cross-posting from {author}: {text[:50]}...")
+            logger.info(f"Cross-posting from {author}: {text[:50]}... (has_images: {has_images})")
             
             telegram_sent = False
             discord_sent = False
@@ -242,35 +247,48 @@ class CrosspostManager:
                 except Exception as e:
                     logger.error(f"Discord send error: {e}")
             
-            # Post to FurAffinity (journal or image)
+            # Post to FurAffinity (auto-detect image or journal)
             if self.furaffinity:
                 try:
-                    submission_type = Config.FURAFFINITY_SUBMISSION_TYPE.lower()
-                    
-                    if submission_type == 'image':
-                        # Try to extract image URLs from post
+                    # Determine submission type based on whether post has images
+                    if has_images and Config.FURAFFINITY_DOWNLOAD_IMAGES:
+                        # Post as image submission
+                        logger.info(f"Post has images - attempting image submission to FurAffinity")
                         image_urls = post.get('images', [])
-                        if image_urls and Config.FURAFFINITY_DOWNLOAD_IMAGES:
-                            # Download and submit first image
-                            for image_url in image_urls[:1]:  # Only submit first image
-                                local_path = await self.furaffinity.download_image(image_url)
-                                if local_path:
-                                    title = f"Cross-post from {author}"
-                                    description = f"{text}\n\n🔗 Original post: {bluesky_url}"
-                                    furaffinity_sent = await asyncio.get_event_loop().run_in_executor(
-                                        None,
-                                        self.furaffinity.post_image,
-                                        local_path,
-                                        title,
-                                        description,
-                                        Config.FURAFFINITY_SUBMISSION_CATEGORY,
-                                        Config.FURAFFINITY_SUBMISSION_RATING,
-                                    )
-                                    break
-                        else:
-                            logger.warning(f"No images found or download disabled for image submission")
+                        
+                        for image_url in image_urls[:1]:  # Only submit first image
+                            local_path = await self.furaffinity.download_image(image_url)
+                            if local_path:
+                                title = f"Cross-post from {author}"
+                                description = f"{text}\n\n🔗 Original post: {bluesky_url}"
+                                furaffinity_sent = await asyncio.get_event_loop().run_in_executor(
+                                    None,
+                                    self.furaffinity.post_image,
+                                    local_path,
+                                    title,
+                                    description,
+                                    Config.FURAFFINITY_SUBMISSION_CATEGORY,
+                                    Config.FURAFFINITY_SUBMISSION_RATING,
+                                )
+                                break
+                        
+                        if not furaffinity_sent:
+                            logger.warning(f"Image submission failed, falling back to journal")
+                            journal_title = f"Cross-post from {author}"
+                            journal_content = f"{text}\n\n🔗 Original post: {bluesky_url}"
+                            furaffinity_sent = await asyncio.get_event_loop().run_in_executor(
+                                None,
+                                self.furaffinity.post_journal,
+                                journal_title,
+                                journal_content,
+                            )
                     else:
-                        # Default to journal posting
+                        # Post as journal (no images or image download disabled)
+                        if has_images and not Config.FURAFFINITY_DOWNLOAD_IMAGES:
+                            logger.info(f"Post has images but download is disabled - posting as journal")
+                        else:
+                            logger.info(f"Post has no images - posting as journal")
+                        
                         journal_title = f"Cross-post from {author}"
                         journal_content = f"{text}\n\n🔗 Original post: {bluesky_url}"
                         furaffinity_sent = await asyncio.get_event_loop().run_in_executor(
