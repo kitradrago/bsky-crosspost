@@ -1,9 +1,11 @@
+# Main.py Source code
+
 import asyncio
 import logging
 import json
 import os
 from datetime import datetime, timedelta
-from typing import Set
+from typing import Set, Dict, List
 
 from config import Config
 from bluesky_client import BlueskyClient
@@ -370,78 +372,77 @@ async def main():
     
     # Start main crosspost manager
     manager = CrosspostManager(webui)
+    
+    # Set cross-post callback for WebUI retries
+    async def retry_callback(post_uri: str, services: list[str]) -> dict:
+        """Handle retry requests from WebUI"""
+        try:
+            # Find the post in history
+            posts = webui._load_posts_history()
+            post_data = None
+            for p in posts:
+                if p['uri'] == post_uri:
+                    post_data = p
+                    break
+            
+            if not post_data:
+                return {'error': 'Post not found', 'success': False}
+            
+            # Reconstruct minimal post object
+            post = {
+                'uri': post_data['uri'],
+                'text': post_data['text'],
+                'author': post_data['author'],
+                'created_at': post_data['created_at'],
+            }
+            
+            # Retry selected services
+            results = {}
+            if 'telegram' in services and manager.telegram:
+                try:
+                    results['telegram'] = await manager.telegram.send_post(post['text'], post['author'], manager._get_bluesky_post_url(post['uri']))
+                except Exception as e:
+                    logger.error(f"Telegram retry error: {e}")
+                    results['telegram'] = False
+            
+            if 'discord' in services and manager.discord:
+                try:
+                    results['discord'] = await manager.discord.send_post(post['text'], post['author'], manager._get_bluesky_post_url(post['uri']))
+                except Exception as e:
+                    logger.error(f"Discord retry error: {e}")
+                    results['discord'] = False
+            
+            if 'furaffinity' in services and manager.furaffinity:
+                try:
+                    journal_title = f"Cross-post from {post['author']}"
+                    journal_content = f"{post['text']}\n\n🔗 Original post: {manager._get_bluesky_post_url(post['uri'])}"
+                    results['furaffinity'] = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        manager.furaffinity.post_journal,
+                        journal_title,
+                        journal_content,
+                    )
+                except Exception as e:
+                    logger.error(f"FurAffinity retry error: {e}")
+                    results['furaffinity'] = False
+            
+            # Update webui records
+            webui.update_post_record(
+                post_uri,
+                telegram_sent=results.get('telegram', post_data['telegram_sent']),
+                discord_sent=results.get('discord', post_data['discord_sent']),
+                furaffinity_sent=results.get('furaffinity', post_data['furaffinity_sent']),
+            )
+            
+            logger.info(f"✅ Retry complete: {results}")
+            return {'success': True, 'results': results}
+        except Exception as e:
+            logger.error(f"Retry callback error: {e}", exc_info=True)
+            return {'error': str(e), 'success': False}
+    
+    webui.set_cross_post_callback(retry_callback)
+    
     await manager.run()
-
-# Set cross-post callback for WebUI retries
-async def retry_callback(post_uri: str, services: List[str]) -> dict:
-    """Handle retry requests from WebUI"""
-    try:
-        # Find the post in history
-        posts = webui._load_posts_history()
-        post_data = None
-        for p in posts:
-            if p['uri'] == post_uri:
-                post_data = p
-                break
-        
-        if not post_data:
-            return {'error': 'Post not found', 'success': False}
-        
-        # Reconstruct minimal post object
-        post = {
-            'uri': post_data['uri'],
-            'text': post_data['text'],
-            'author': post_data['author'],
-            'created_at': post_data['created_at'],
-        }
-        
-        # Retry selected services
-        results = {}
-        if 'telegram' in services and manager.telegram:
-            try:
-                results['telegram'] = await manager.telegram.send_post(post['text'], post['author'], manager._get_bluesky_post_url(post['uri']))
-            except Exception as e:
-                logger.error(f"Telegram retry error: {e}")
-                results['telegram'] = False
-        
-        if 'discord' in services and manager.discord:
-            try:
-                results['discord'] = await manager.discord.send_post(post['text'], post['author'], manager._get_bluesky_post_url(post['uri']))
-            except Exception as e:
-                logger.error(f"Discord retry error: {e}")
-                results['discord'] = False
-        
-        if 'furaffinity' in services and manager.furaffinity:
-            try:
-                journal_title = f"Cross-post from {post['author']}"
-                journal_content = f"{post['text']}\n\n🔗 Original post: {manager._get_bluesky_post_url(post['uri'])}"
-                results['furaffinity'] = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    manager.furaffinity.post_journal,
-                    journal_title,
-                    journal_content,
-                )
-            except Exception as e:
-                logger.error(f"FurAffinity retry error: {e}")
-                results['furaffinity'] = False
-        
-        # Update webui records
-        webui.update_post_record(
-            post_uri,
-            telegram_sent=results.get('telegram', post_data['telegram_sent']),
-            discord_sent=results.get('discord', post_data['discord_sent']),
-            furaffinity_sent=results.get('furaffinity', post_data['furaffinity_sent']),
-        )
-        
-        logger.info(f"✅ Retry complete: {results}")
-        return {'success': True, 'results': results}
-    except Exception as e:
-        logger.error(f"Retry callback error: {e}", exc_info=True)
-        return {'error': str(e), 'success': False}
-
-webui.set_cross_post_callback(retry_callback)
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
-    
