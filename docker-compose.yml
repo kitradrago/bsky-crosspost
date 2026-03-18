@@ -5,6 +5,12 @@ networks:
     driver: bridge
     name: appserv-net
 
+volumes:
+  config-data:
+    driver: local
+  selenium-shm:
+    driver: local
+
 services:
   selenium:
     image: selenium/standalone-chrome:latest
@@ -28,7 +34,7 @@ services:
     ports:
       - "2759:2759"
     volumes:
-      - ${CONFIG_DIR:-./config}:/config
+      - config-data:/config
     depends_on:
       - selenium
     environment:
