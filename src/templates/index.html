@@ -517,6 +517,9 @@
                 document.getElementById('blueskyCheckInterval').value = cfg.bluesky_check_interval || '300';
                 document.getElementById('telegramChannelId').value = cfg.telegram_channel_id || '';
                 document.getElementById('discordChannelId').value = cfg.discord_channel_id || '';
+                if (cfg.furaffinity_username) {
+                    document.getElementById('furaffinityUsername').value = cfg.furaffinity_username;
+                }
             } catch (e) {
                 console.error('Config load error:', e);
             }
@@ -531,7 +534,8 @@
                 telegram_bot_token: document.getElementById('telegramBotToken').value,
                 telegram_channel_id: document.getElementById('telegramChannelId').value,
                 discord_bot_token: document.getElementById('discordBotToken').value,
-                discord_channel_id: document.getElementById('discordChannelId').value
+                discord_channel_id: document.getElementById('discordChannelId').value,
+                furaffinity_username: document.getElementById('furaffinityUsername').value
             });
             const r = await res.json();
             document.getElementById('setupAlert').innerHTML = res.ok ? '<div class="alert success">✅ ' + r.message + '</div>' : '<div class="alert error">❌ ' + r.error + '</div>';
@@ -675,6 +679,16 @@
                     </div>
                 </div>
 
+                <div class="card">
+                    <h2>🦊 FurAffinity</h2>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label>Username</label>
+                            <input type="text" id="furaffinityUsername" placeholder="your_fa_username">
+                        </div>
+                    </div>
+                </div>
+
                 <button class="btn btn-primary" onclick="saveConfig()">💾 Save Settings</button>
                 <div id="setupAlert"></div>
             </div>
@@ -698,6 +712,10 @@
                         <div class="stat-card">
                             <h3>Discord</h3>
                             <div class="number" id="discordCount">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>FurAffinity</h3>
+                            <div class="number" id="furaffinityCount">-</div>
                         </div>
                     </div>
                 </div>
