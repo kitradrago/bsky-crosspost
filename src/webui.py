@@ -27,10 +27,15 @@ class WebUI:
         self.app = web.Application()
         self.authenticated_tokens = set()
         self.cipher_key = None
+        self.cross_post_callback = None
         self._ensure_encryption_key()
         self.setup_cors()
         self.setup_routes()
         logger.info(f"✅ WebUI initialized - log_dir: {self.log_dir}")
+    
+    def set_cross_post_callback(self, callback):
+        """Set callback for cross-posting functionality"""
+        self.cross_post_callback = callback
     
     def _ensure_encryption_key(self):
         if os.path.exists(self.key_file):
@@ -94,6 +99,7 @@ class WebUI:
         self.app.router.add_get('/api/logs', self.get_logs)
         self.app.router.add_get('/api/posts', self.get_posts_history)
         self.app.router.add_get('/api/posts/stats', self.get_posts_stats)
+        self.app.router.add_post('/api/posts/retry', self.retry_post)
         self.app.on_startup.append(self.cleanup_old_logs)
     
     async def cleanup_old_logs(self, app):
@@ -357,6 +363,32 @@ class WebUI:
             logger.error(f"Error getting stats: {e}")
             return web.json_response({'error': str(e)}, status=500)
     
+    async def retry_post(self, request):
+        """Retry posting to specific services"""
+        if not self._is_authenticated(request):
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+        
+        if not self.cross_post_callback:
+            return web.json_response({'error': 'Cross-post callback not available'}, status=500)
+        
+        try:
+            data = await request.json()
+            post_uri = data.get('uri')
+            services = data.get('services', ['telegram', 'discord', 'furaffinity'])
+            
+            if not post_uri:
+                return web.json_response({'error': 'Missing post URI'}, status=400)
+            
+            logger.info(f"🔄 Retrying post {post_uri} for services: {services}")
+            
+            # Call the cross-post callback with the post and services to retry
+            result = await self.cross_post_callback(post_uri, services)
+            
+            return web.json_response(result)
+        except Exception as e:
+            logger.error(f"Retry error: {e}", exc_info=True)
+            return web.json_response({'error': str(e)}, status=500)
+    
     def _read_env_file(self) -> str:
         env_file = '/config/.env'
         if os.path.exists(env_file):
@@ -415,6 +447,31 @@ class WebUI:
                 json.dump(posts[-1000:], f)
         except Exception as e:
             logger.error(f"Error saving post: {e}")
+    
+    def update_post_record(self, post_uri: str, telegram_sent: bool = None, discord_sent: bool = None, furaffinity_sent: bool = None):
+        """Update an existing post record with new status"""
+        try:
+            posts = self._load_posts_history()
+            for post in posts:
+                if post['uri'] == post_uri:
+                    if telegram_sent is not None:
+                        post['telegram_sent'] = telegram_sent
+                    if discord_sent is not None:
+                        post['discord_sent'] = discord_sent
+                    if furaffinity_sent is not None:
+                        post['furaffinity_sent'] = furaffinity_sent
+                    
+                    # Update status
+                    post['status'] = 'success' if (post['telegram_sent'] or post['discord_sent'] or post['furaffinity_sent']) else 'failed'
+                    
+                    with open(self.posts_history_file, 'w') as f:
+                        json.dump(posts, f)
+                    logger.info(f"Updated post record: {post_uri}")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Error updating post record: {e}")
+            return False
     
     def _ensure_certificate(self):
         os.makedirs(self.cert_dir, exist_ok=True)
@@ -524,6 +581,7 @@ class WebUI:
         .btn-primary:hover {transform: translateY(-2px); box-shadow: 0 8px 16px rgba(102,126,234,0.4);}
         .btn-secondary {background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color);}
         .btn-secondary:hover {background: var(--accent); color: white;}
+        .btn-small {padding: 6px 12px; font-size: 12px;}
         .alert {padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 14px;}
         .alert.success {background: #d4edda; color: #155724; border: 1px solid #c3e6cb;}
         .alert.error {background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;}
@@ -543,7 +601,8 @@ class WebUI:
         .status-badge.failed {background: #f8d7da; color: #721c24;}
         .log-controls {display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center;}
         .disabled-state {opacity: 0.6; pointer-events: none;}
-        @media (max-width: 768px) {.navbar {flex-direction: column; gap: 15px;} .form-row {grid-template-columns: 1fr;} .container {padding: 20px 15px;} .card-header {flex-direction: column; align-items: flex-start; gap: 15px;}}
+        .retry-buttons {display: flex; gap: 8px; flex-wrap: wrap;}
+        @media (max-width: 768px) {.navbar {flex-direction: column; gap: 15px;} .form-row {grid-template-columns: 1fr;} .container {padding: 20px 15px;} .card-header {flex-direction: column; align-items: flex-start; gap: 15px;} .retry-buttons {flex-direction: column;} .retry-buttons .btn-small {width: 100%;}}
     </style>
 </head>
 <body>
@@ -563,7 +622,7 @@ class WebUI:
         <div class="container">
             <div class="tabs"><button class="tab-btn active" onclick="showTab('setup')">⚙️ Setup</button><button class="tab-btn" onclick="showTab('activity')">📊 Activity</button><button class="tab-btn" onclick="showTab('logs')">📋 Logs</button><button class="tab-btn" onclick="showTab('admin')">🔐 Admin</button></div>
             <div class="page active" id="setupPage"><div class="card"><div class="card-header"><h2>🔐 Bluesky Account</h2></div><div class="form-row"><div class="form-field"><label>Bluesky Handle</label><input type="text" id="blueskyHandle" placeholder="example.bsky.social"></div><div class="form-field"><label>App Password</label><input type="password" id="blueskyPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Account to Monitor</label><input type="text" id="blueskyTargetHandle" placeholder="furthemore.org"></div><div class="form-field"><label>Check Interval (sec)</label><input type="number" id="blueskyCheckInterval" placeholder="300" min="10"></div></div></div><div class="card"><div class="card-header"><h2>💬 Telegram</h2><label class="toggle-switch"><input type="checkbox" id="telegramEnabled"><span class="toggle-slider"></span></label></div><div id="telegramSettings"><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="telegramBotToken" placeholder="123456:ABC-DEF..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="telegramChannelId" placeholder="-1001234567890"></div></div></div></div><div class="card"><div class="card-header"><h2>🎮 Discord</h2><label class="toggle-switch"><input type="checkbox" id="discordEnabled"><span class="toggle-slider"></span></label></div><div id="discordSettings"><div class="form-row"><div class="form-field"><label>Bot Token</label><input type="password" id="discordBotToken" placeholder="MTA4NzQ1..." autocomplete="new-password"></div><div class="form-field"><label>Channel ID</label><input type="text" id="discordChannelId" placeholder="1087459487405..."></div></div></div></div><div class="card"><div class="card-header"><h2>🐾 FurAffinity</h2><label class="toggle-switch"><input type="checkbox" id="furAffinityEnabled"><span class="toggle-slider"></span></label></div><div id="furAffinitySettings"><div class="form-row"><div class="form-field"><label>Username</label><input type="text" id="furAffinityUsername" placeholder="your_username"></div><div class="form-field"><label>Password</label><input type="password" id="furAffinityPassword" placeholder="••••••••" autocomplete="new-password"></div></div><div class="form-row"><div class="form-field"><label>Image Category</label><select id="furAffinitySubmissionCategory"><option value="1">Artwork/Digital</option><option value="2">Photography</option><option value="3">Traditional Art</option><option value="4">Sculpture</option><option value="5">Other</option></select><div class="helper-text">Used for image submissions only</div></div></div><div class="form-row"><div class="form-field"><label>Rating</label><select id="furAffinitySubmissionRating"><option value="general">General</option><option value="mature">Mature</option><option value="adult">Adult</option></select></div><div class="form-field"><label><input type="checkbox" id="furAffinityDownloadImages"> Download & Submit Images</label><div class="helper-text">Auto-detect images in posts and submit as images when available, otherwise post as journal</div></div></div></div></div><button class="btn btn-primary" onclick="saveConfig()" style="margin-top: 20px;">💾 Save Settings</button><div id="setupAlert"></div></div>
-            <div class="page" id="activityPage"><div class="card"><h2>📊 Activity Overview</h2><div class="stats-grid"><div class="stat-card"><h3>Posts Processed</h3><div class="number" id="totalPosts">-</div></div><div class="stat-card"><h3>Successful</h3><div class="number" id="successfulPosts">-</div></div><div class="stat-card"><h3>Telegram</h3><div class="number" id="telegramCount">-</div></div><div class="stat-card"><h3>Discord</h3><div class="number" id="discordCount">-</div></div><div class="stat-card"><h3>FurAffinity</h3><div class="number" id="furAffinityCount">-</div></div></div></div><div class="card"><h2>📝 Recent Posts</h2><table class="posts-table"><thead><tr><th>Date & Time</th><th>Post</th><th>Status</th><th>Telegram</th><th>Discord</th><th>FurAffinity</th></tr></thead><tbody id="postsTableBody"><tr><td colspan="6" style="text-align: center; padding: 40px;">Loading...</td></tr></tbody></table></div></div>
+            <div class="page" id="activityPage"><div class="card"><h2>📊 Activity Overview</h2><div class="stats-grid"><div class="stat-card"><h3>Posts Processed</h3><div class="number" id="totalPosts">-</div></div><div class="stat-card"><h3>Successful</h3><div class="number" id="successfulPosts">-</div></div><div class="stat-card"><h3>Telegram</h3><div class="number" id="telegramCount">-</div></div><div class="stat-card"><h3>Discord</h3><div class="number" id="discordCount">-</div></div><div class="stat-card"><h3>FurAffinity</h3><div class="number" id="furAffinityCount">-</div></div></div></div><div class="card"><h2>📝 Recent Posts</h2><table class="posts-table"><thead><tr><th>Date & Time</th><th>Post</th><th>Status</th><th>Telegram</th><th>Discord</th><th>FurAffinity</th><th>Actions</th></tr></thead><tbody id="postsTableBody"><tr><td colspan="7" style="text-align: center; padding: 40px;">Loading...</td></tr></tbody></table></div></div>
             <div class="page" id="logsPage"><div class="card"><h2>📋 System Logs</h2><div class="log-controls"><div class="form-field" style="margin: 0; flex: 1; min-width: 150px;"><label>Show last:</label><select id="logLines" onchange="loadLogs()" style="margin-top: 4px;"><option value="50">50 lines</option><option value="100" selected>100 lines</option><option value="200">200 lines</option><option value="500">500 lines</option></select></div><button class="btn btn-secondary" onclick="loadLogs()" style="margin-top: 22px;">🔄 Refresh Logs</button><label style="margin-top: 22px;"><input type="checkbox" id="autoRefreshLogs"> Auto-refresh</label></div><div class="logs-container" id="logsContainer"><div class="log-line">Loading...</div></div></div></div>
             <div class="page" id="adminPage"><div class="card"><h2>🔐 Admin Settings</h2><div class="form-row"><div class="form-field"><label>Admin Username</label><input type="text" id="adminUsername" placeholder="admin" autocomplete="off"><div class="helper-text">Username for web interface</div></div><div class="form-field"><label>Admin Password</label><input type="password" id="adminPassword" placeholder="••••••••" autocomplete="new-password"><div class="helper-text">Password for web interface (will be encrypted)</div></div></div><button class="btn btn-primary" onclick="saveAdminSettings()" style="margin-top: 20px;">💾 Save Admin Settings</button><div id="adminAlert"></div></div></div>
         </div>
@@ -771,7 +830,32 @@ class WebUI:
             document.getElementById('discordCount').textContent = stats.discord_sent || 0;
             document.getElementById('furAffinityCount').textContent = stats.furaffinity_sent || 0;
             const tbody = document.getElementById('postsTableBody');
-            tbody.innerHTML = posts.posts && posts.posts.length ? posts.posts.map(p => '<tr><td>' + new Date(p.posted_at).toLocaleString() + '</td><td>' + p.text.substring(0, 50) + '</td><td><span class="status-badge ' + p.status + '">' + p.status + '</span></td><td>' + (p.telegram_sent ? '✅' : '⏸️') + '</td><td>' + (p.discord_sent ? '✅' : '⏸️') + '</td><td>' + (p.furaffinity_sent ? '✅' : '⏸️') + '</td></tr>').join('') : '<tr><td colspan="6" style="text-align: center; padding: 40px;">No posts</td></tr>';
+            tbody.innerHTML = posts.posts && posts.posts.length ? posts.posts.map(p => '<tr><td>' + new Date(p.posted_at).toLocaleString() + '</td><td>' + p.text.substring(0, 50) + '</td><td><span class="status-badge ' + p.status + '">' + p.status + '</span></td><td>' + (p.telegram_sent ? '✅' : '❌') + '</td><td>' + (p.discord_sent ? '✅' : '❌') + '</td><td>' + (p.furaffinity_sent ? '✅' : '❌') + '</td><td><div class="retry-buttons">' + getRetryButtons(p.uri, p.telegram_sent, p.discord_sent, p.furaffinity_sent) + '</div></td></tr>').join('') : '<tr><td colspan="7" style="text-align: center; padding: 40px;">No posts</td></tr>';
+        }
+        
+        function getRetryButtons(postUri, telegramSent, discordSent, furaffSent) {
+            let buttons = '';
+            if (!telegramSent) buttons += '<button class="btn btn-secondary btn-small" onclick="retryService(\'' + postUri + '\', [\'telegram\'])">Telegram</button>';
+            if (!discordSent) buttons += '<button class="btn btn-secondary btn-small" onclick="retryService(\'' + postUri + '\', [\'discord\'])">Discord</button>';
+            if (!furaffSent) buttons += '<button class="btn btn-secondary btn-small" onclick="retryService(\'' + postUri + '\', [\'furaffinity\'])">FurAffinity</button>';
+            if (!telegramSent || !discordSent || !furaffSent) buttons += '<button class="btn btn-primary btn-small" onclick="retryService(\'' + postUri + '\', ' + JSON.stringify(['telegram', 'discord', 'furaffinity'].filter((_, i) => (i === 0 && !telegramSent) || (i === 1 && !discordSent) || (i === 2 && !furaffSent))) + ')">Retry All</button>';
+            return buttons || '<span style="font-size: 12px; color: var(--text-secondary);">All sent ✓</span>';
+        }
+        
+        async function retryService(postUri, services) {
+            if (!confirm('Retry ' + services.join(', ') + ' for this post?')) return;
+            try {
+                const res = await apiCall('/api/posts/retry', 'POST', {uri: postUri, services: services});
+                const data = await res.json();
+                if (res.ok) {
+                    alert('✅ Retry submitted! Refreshing posts...');
+                    await loadPosts();
+                } else {
+                    alert('❌ Retry failed: ' + data.error);
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
         }
         
         async function loadLogs() {
