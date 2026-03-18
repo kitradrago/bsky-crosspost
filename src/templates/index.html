@@ -364,50 +364,6 @@
             word-break: break-word;
             line-height: 1.4;
         }
-        .posts-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        .posts-table th {
-            background: var(--bg-secondary);
-            padding: 12px;
-            text-align: left;
-            border-bottom: 2px solid var(--border-color);
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-        .posts-table td {
-            padding: 12px;
-            border-bottom: 1px solid var(--border-color);
-        }
-        .posts-table tr:hover {
-            background: var(--bg-secondary);
-        }
-        .status-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        .status-badge.success {
-            background: #d4edda;
-            color: #155724;
-        }
-        .status-badge.failed {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        .retry-buttons {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .disabled-state {
-            opacity: 0.6;
-            pointer-events: none;
-        }
         @media (max-width: 768px) {
             .navbar {
                 flex-direction: column;
@@ -424,14 +380,204 @@
                 align-items: flex-start;
                 gap: 15px;
             }
-            .retry-buttons {
-                flex-direction: column;
-            }
-            .retry-buttons .btn-small {
-                width: 100%;
-            }
         }
     </style>
+    <script>
+        let authToken = localStorage.getItem('authToken');
+        let refreshInterval = null;
+
+        window.onload = async function() {
+            loadTheme();
+            if (authToken) {
+                try {
+                    const res = await fetch('/api/auth/check', {headers: {'Authorization': 'Bearer ' + authToken}});
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.authenticated) {
+                            showDashboard();
+                            await loadConfig();
+                            await loadLogs();
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Token check failed:", e);
+                }
+            }
+            showLogin();
+        };
+
+        function loadTheme() {
+            fetch('/api/admin/theme').then(r => r.json()).then(data => {
+                const theme = data.theme || 'auto';
+                if (theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark-mode');
+                }
+            }).catch(e => console.error('Theme load error:', e));
+        }
+
+        function toggleTheme() {
+            const isDark = document.documentElement.classList.toggle('dark-mode');
+            fetch('/api/admin/theme', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken},
+                body: JSON.stringify({theme: isDark ? 'dark' : 'light'})
+            });
+        }
+
+        function showLogin() {
+            document.getElementById('loginPage').classList.remove('hidden');
+            document.getElementById('dashboard').classList.add('hidden');
+        }
+
+        function showDashboard() {
+            document.getElementById('loginPage').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+        }
+
+        function showTab(event, tab) {
+            event.preventDefault();
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tab + 'Page').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function showRestartBanner() {
+            document.getElementById('restartBanner').classList.remove('hidden');
+        }
+
+        async function restartContainer() {
+            if (confirm('🔄 This will restart the container. Continue?')) {
+                const res = await apiCall('/api/admin/restart', 'POST');
+                const r = await res.json();
+                if (res.ok) {
+                    alert('✅ Container restarting...');
+                    setTimeout(() => location.reload(), 5000);
+                }
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username, password})
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    authToken = data.token;
+                    localStorage.setItem('authToken', authToken);
+                    showDashboard();
+                    await loadConfig();
+                    await loadLogs();
+                } else {
+                    alert('❌ Login failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                alert('❌ Login error: ' + error.message);
+            }
+        }
+
+        async function handleLogout() {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken},
+                body: JSON.stringify({token: authToken})
+            });
+            authToken = null;
+            localStorage.removeItem('authToken');
+            if (refreshInterval) clearInterval(refreshInterval);
+            showLogin();
+        }
+
+        async function apiCall(url, method = 'GET', body) {
+            const opts = {method, headers: {'Authorization': 'Bearer ' + authToken}};
+            if (body) {
+                opts.headers['Content-Type'] = 'application/json';
+                opts.body = JSON.stringify(body);
+            }
+            return fetch(url, opts);
+        }
+
+        async function loadConfig() {
+            try {
+                const res = await apiCall('/api/config');
+                const cfg = await res.json();
+                document.getElementById('blueskyHandle').value = cfg.bluesky_handle || '';
+                document.getElementById('blueskyTargetHandle').value = cfg.bluesky_target_handle || '';
+                document.getElementById('blueskyCheckInterval').value = cfg.bluesky_check_interval || '300';
+                document.getElementById('telegramChannelId').value = cfg.telegram_channel_id || '';
+                document.getElementById('discordChannelId').value = cfg.discord_channel_id || '';
+            } catch (e) {
+                console.error('Config load error:', e);
+            }
+        }
+
+        async function saveConfig() {
+            const res = await apiCall('/api/config', 'POST', {
+                bluesky_handle: document.getElementById('blueskyHandle').value,
+                bluesky_password: document.getElementById('blueskyPassword').value,
+                bluesky_target_handle: document.getElementById('blueskyTargetHandle').value,
+                bluesky_check_interval: parseInt(document.getElementById('blueskyCheckInterval').value) || 300,
+                telegram_bot_token: document.getElementById('telegramBotToken').value,
+                telegram_channel_id: document.getElementById('telegramChannelId').value,
+                discord_bot_token: document.getElementById('discordBotToken').value,
+                discord_channel_id: document.getElementById('discordChannelId').value
+            });
+            const r = await res.json();
+            document.getElementById('setupAlert').innerHTML = res.ok ? '<div class="alert success">✅ ' + r.message + '</div>' : '<div class="alert error">❌ ' + r.error + '</div>';
+            if (res.ok) showRestartBanner();
+        }
+
+        async function saveAdminSettings() {
+            const u = document.getElementById('adminUsername').value;
+            const p = document.getElementById('adminPassword').value;
+            if (!u && !p) {alert('Enter username or password'); return;}
+            const res = await apiCall('/api/admin/settings', 'POST', {admin_username: u, admin_password: p});
+            const r = await res.json();
+            document.getElementById('adminAlert').innerHTML = res.ok ? '<div class="alert success">✅ ' + r.message + '</div>' : '<div class="alert error">❌ ' + r.error + '</div>';
+            if (res.ok) {
+                document.getElementById('adminPassword').value = '';
+                showRestartBanner();
+            }
+        }
+
+        async function loadLogs() {
+            try {
+                const lines = 100;
+                const res = await apiCall('/api/logs?lines=' + lines);
+                if (!res.ok) {
+                    document.getElementById('logsContainer').innerHTML = '<div class="log-line">Error ' + res.status + ' loading logs</div>';
+                    return;
+                }
+                const data = await res.json();
+                const container = document.getElementById('logsContainer');
+                container.innerHTML = '';
+                if (data.logs && data.logs.length > 0) {
+                    data.logs.forEach(log => {
+                        const line = document.createElement('div');
+                        line.className = 'log-line';
+                        line.textContent = log;
+                        container.appendChild(line);
+                    });
+                } else {
+                    container.innerHTML = '<div class="log-line">No logs available</div>';
+                }
+                container.scrollTop = container.scrollHeight;
+            } catch (e) {
+                console.error('Logs load error:', e);
+            }
+        }
+    </script>
 </head>
 <body>
     <div class="login-page" id="loginPage">
@@ -453,7 +599,7 @@
             </form>
         </div>
     </div>
-    
+
     <div class="dashboard hidden" id="dashboard">
         <div class="navbar">
             <div class="navbar-left">
@@ -475,7 +621,7 @@
                 <button class="tab-btn" onclick="showTab(event, 'logs')">📋 Logs</button>
                 <button class="tab-btn" onclick="showTab(event, 'admin')">🔐 Admin</button>
             </div>
-            
+
             <div class="page active" id="setupPage">
                 <div class="card">
                     <h2>🔐 Bluesky Account</h2>
@@ -500,7 +646,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="card">
                     <h2>💬 Telegram</h2>
                     <div class="form-row">
@@ -514,7 +660,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="card">
                     <h2>🎮 Discord</h2>
                     <div class="form-row">
@@ -528,11 +674,11 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <button class="btn btn-primary" onclick="saveConfig()">💾 Save Settings</button>
                 <div id="setupAlert"></div>
             </div>
-            
+
             <div class="page" id="activityPage">
                 <div class="card">
                     <h2>📊 Activity Overview</h2>
@@ -556,7 +702,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="page" id="logsPage">
                 <div class="card">
                     <h2>📋 System Logs</h2>
@@ -565,7 +711,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="page" id="adminPage">
                 <div class="card">
                     <h2>🔐 Admin Settings</h2>
@@ -587,185 +733,5 @@
             </div>
         </div>
     </div>
-
-    <script>
-        let authToken = localStorage.getItem('authToken');
-        let refreshInterval = null;
-        
-        window.onload = async function() {
-            loadTheme();
-            if (authToken) {
-                try {
-                    const res = await fetch('/api/auth/check', {headers: {'Authorization': 'Bearer ' + authToken}});
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.authenticated) {
-                            showDashboard();
-                            await loadConfig();
-                            await loadLogs();
-                            return;
-                        }
-                    }
-                } catch (e) {
-                    console.error("Token check failed:", e);
-                }
-            }
-            showLogin();
-        };
-        
-        function loadTheme() {
-            fetch('/api/admin/theme').then(r => r.json()).then(data => {
-                const theme = data.theme || 'auto';
-                if (theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                    document.documentElement.classList.add('dark-mode');
-                }
-            }).catch(e => console.error('Theme load error:', e));
-        }
-        
-        function toggleTheme() {
-            const isDark = document.documentElement.classList.toggle('dark-mode');
-            fetch('/api/admin/theme', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken},
-                body: JSON.stringify({theme: isDark ? 'dark' : 'light'})
-            });
-        }
-        
-        function showLogin() {
-            document.getElementById('loginPage').classList.remove('hidden');
-            document.getElementById('dashboard').classList.add('hidden');
-        }
-        
-        function showDashboard() {
-            document.getElementById('loginPage').classList.add('hidden');
-            document.getElementById('dashboard').classList.remove('hidden');
-        }
-        
-        function showTab(event, tab) {
-            event.preventDefault();
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById(tab + 'Page').classList.add('active');
-            event.target.classList.add('active');
-        }
-        
-        function showRestartBanner() {
-            document.getElementById('restartBanner').classList.remove('hidden');
-        }
-        
-        async function restartContainer() {
-            if (confirm('🔄 This will restart the container. Continue?')) {
-                const res = await apiCall('/api/admin/restart', 'POST');
-                const r = await res.json();
-                if (res.ok) {
-                    alert('✅ Container restarting...');
-                    setTimeout(() => location.reload(), 5000);
-                }
-            }
-        }
-        
-        async function handleLogin(e) {
-            e.preventDefault();
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            console.log('Attempting login with username:', username);
-            
-            try {
-                const res = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({username, password})
-                });
-                
-                const data = await res.json();
-                console.log('Login response:', res.status, data);
-                
-                if (res.ok) {
-                    authToken = data.token;
-                    localStorage.setItem('authToken', authToken);
-                    showDashboard();
-                    await loadConfig();
-                    await loadLogs();
-                } else {
-                    alert('❌ Login failed: ' + (data.error || 'Unknown error'));
-                }
-            } catch (error) {
-                console.error('Login error:', error);
-                alert('❌ Login error: ' + error.message);
-            }
-        }
-        
-        async function handleLogout() {
-            await fetch('/api/auth/logout', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken},
-                body: JSON.stringify({token: authToken})
-            });
-            authToken = null;
-            localStorage.removeItem('authToken');
-            if (refreshInterval) clearInterval(refreshInterval);
-            showLogin();
-        }
-        
-        async function apiCall(url, method = 'GET', body) {
-            const opts = {method, headers: {'Authorization': 'Bearer ' + authToken}};
-            if (body) {
-                opts.headers['Content-Type'] = 'application/json';
-                opts.body = JSON.stringify(body);
-            }
-            return fetch(url, opts);
-        }
-        
-        async function loadConfig() {
-            try {
-                const res = await apiCall('/api/config');
-                const cfg = await res.json();
-                document.getElementById('blueskyHandle').value = cfg.bluesky_handle || '';
-                document.getElementById('blueskyTargetHandle').value = cfg.bluesky_target_handle || '';
-                document.getElementById('blueskyCheckInterval').value = cfg.bluesky_check_interval || '300';
-                document.getElementById('telegramChannelId').value = cfg.telegram_channel_id || '';
-                document.getElementById('discordChannelId').value = cfg.discord_channel_id || '';
-            } catch (e) {
-                console.error('Config load error:', e);
-            }
-        }
-        
-        async function saveConfig() {
-            const res = await apiCall('/api/config', 'POST', {
-                bluesky_handle: document.getElementById('blueskyHandle').value,
-                bluesky_password: document.getElementById('blueskyPassword').value,
-                bluesky_target_handle: document.getElementById('blueskyTargetHandle').value,
-                bluesky_check_interval: parseInt(document.getElementById('blueskyCheckInterval').value) || 300,
-                telegram_bot_token: document.getElementById('telegramBotToken').value,
-                telegram_channel_id: document.getElementById('telegramChannelId').value,
-                discord_bot_token: document.getElementById('discordBotToken').value,
-                discord_channel_id: document.getElementById('discordChannelId').value
-            });
-            const r = await res.json();
-            document.getElementById('setupAlert').innerHTML = res.ok ? '<div class="alert success">✅ ' + r.message + '</div>' : '<div class="alert error">❌ ' + r.error + '</div>';
-            if (res.ok) showRestartBanner();
-        }
-        
-        async function saveAdminSettings() {
-            const u = document.getElementById('adminUsername').value;
-            const p = document.getElementById('adminPassword').value;
-            if (!u && !p) {alert('Enter username or password'); return;}
-            const res = await apiCall('/api/admin/settings', 'POST', {admin_username: u, admin_password: p});
-            const r = await res.json();
-            document.getElementById('adminAlert').innerHTML = res.ok ? '<div class="alert success">✅ ' + r.message + '</div>' : '<div class="alert error">❌ ' + r.error + '</div>';
-            if (res.ok) {
-                document.getElementById('adminPassword').value = '';
-                showRestartBanner();
-            }
-        }
-        
-        async function loadLogs() {
-            try {
-                const lines = 100;
-                const res = await apiCall('/api/logs?lines=' + lines);
-                if (!res.ok) {
-                    document.getElementById('logsContainer').innerHTML = '<div class="log-line">Error ' + res.status + ' loading logs</div>';
-                    return;
-                }
-                const data = await res.json();
-                const c = *
+</body>
+</html>
