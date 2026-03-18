@@ -535,7 +535,8 @@
                 telegram_channel_id: document.getElementById('telegramChannelId').value,
                 discord_bot_token: document.getElementById('discordBotToken').value,
                 discord_channel_id: document.getElementById('discordChannelId').value,
-                furaffinity_username: document.getElementById('furaffinityUsername').value
+                furaffinity_username: document.getElementById('furaffinityUsername').value,
+                furaffinity_password: document.getElementById('furaffinityPassword').value
             });
             const r = await res.json();
             document.getElementById('setupAlert').innerHTML = res.ok ? '<div class="alert success">✅ ' + r.message + '</div>' : '<div class="alert error">❌ ' + r.error + '</div>';
@@ -685,6 +686,10 @@
                         <div class="form-field">
                             <label>Username</label>
                             <input type="text" id="furaffinityUsername" placeholder="your_fa_username">
+                        </div>
+                        <div class="form-field">
+                            <label>Password</label>
+                            <input type="password" id="furaffinityPassword" placeholder="••••••••" autocomplete="new-password">
                         </div>
                     </div>
                 </div>
