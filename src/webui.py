@@ -98,9 +98,10 @@ class WebUI:
         self.app.router.add_get('/api/posts', self.get_posts_history)
         self.app.router.add_get('/api/posts/stats', self.get_posts_stats)
         self.app.router.add_post('/api/posts/retry', self.retry_post)
+        self.app.router.add_post('/api/posts/manual-check', self.manual_check_posts)
         self.app.on_startup.append(self.cleanup_old_logs)
-    
-    async def cleanup_old_logs(self, app):
+      
+     async def cleanup_old_logs(self, app):
         try:
             cutoff_date = datetime.now() - timedelta(days=90)
             if os.path.exists(self.log_dir):
@@ -383,6 +384,27 @@ class WebUI:
         except Exception as e:
             logger.error(f"Retry error: {e}", exc_info=True)
             return web.json_response({'error': str(e)}, status=500)
+        async def manual_check_posts(self, request):
+    """Manually check for posts in the past N hours"""
+    if not self._is_authenticated(request):
+        return web.json_response({'error': 'Unauthorized'}, status=401)
+    
+    if not self.cross_post_callback:
+        return web.json_response({'error': 'Cross-post callback not available'}, status=500)
+    
+    try:
+        data = await request.json()
+        hours_back = int(data.get('hours_back', 24))
+        
+        if hours_back < 1 or hours_back > 168:  # Max 7 days
+            return web.json_response({'error': 'hours_back must be between 1 and 168'}, status=400)
+        
+        logger.info(f"🔍 MANUAL CHECK: Searching for posts from the last {hours_back} hours")
+        result = await self.cross_post_callback(hours_back=hours_back)
+        return web.json_response(result)
+    except Exception as e:
+        logger.error(f"Manual check error: {e}", exc_info=True)
+        return web.json_response({'error': str(e)}, status=500)
     
     def _read_env_file(self) -> str:
         env_file = '/config/.env'

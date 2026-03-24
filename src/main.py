@@ -374,7 +374,120 @@ async def main():
     manager = CrosspostManager(webui)
     
     # Set cross-post callback for WebUI retries
-    async def retry_callback(post_uri: str, services: list[str]) -> dict:
+   async def retry_callback(post_uri: str = None, services: list[str] = None, hours_back: int = None) -> dict:
+    """Handle both retry requests and manual post checks"""
+    try:
+        # MANUAL CHECK MODE - search for posts in past N hours
+        if hours_back is not None and post_uri is None:
+            logger.info(f"🔍 Manual check initiated for last {hours_back} hours")
+            
+            if not manager.bluesky_connected:
+                return {'error': 'Bluesky not connected', 'success': False}
+            
+            # Get recent posts from the specified time range
+            posts = await manager.bluesky.get_recent_posts(limit=50, hours_back=hours_back)
+            
+            if not posts:
+                logger.warning(f"⚠️  No posts found in the last {hours_back} hours")
+                return {'success': True, 'posts_found': 0, 'message': f'No posts found in the last {hours_back} hours'}
+            
+            logger.info(f"✅ Found {len(posts)} posts in the last {hours_back} hours, processing...")
+            
+            processed_count = 0
+            for post in reversed(posts):
+                # Skip replies
+                if manager._is_reply(post):
+                    logger.info(f"⏭️  Skipping reply from {post['author']}")
+                    continue
+                
+                # Skip already processed posts
+                if post['uri'] in manager.processed_posts:
+                    logger.debug(f"⏭️  Post already processed: {post['text'][:50]}...")
+                    continue
+                
+                logger.info(f"📤 Processing new post from manual check: {post['text'][:50]}...")
+                manager.processed_posts.add(post['uri'])
+                await manager._cross_post(post)
+                processed_count += 1
+            
+            manager._save_processed_posts()
+            
+            return {
+                'success': True,
+                'posts_found': len(posts),
+                'posts_processed': processed_count,
+                'message': f'Found {len(posts)} posts, processed {processed_count} new posts'
+            }
+        
+        # RETRY MODE - retry specific post
+        elif post_uri is not None:
+            # Find the post in history
+            posts = webui._load_posts_history()
+            post_data = None
+            for p in posts:
+                if p['uri'] == post_uri:
+                    post_data = p
+                    break
+            
+            if not post_data:
+                return {'error': 'Post not found', 'success': False}
+            
+            # Reconstruct minimal post object
+            post = {
+                'uri': post_data['uri'],
+                'text': post_data['text'],
+                'author': post_data['author'],
+                'created_at': post_data['created_at'],
+            }
+            
+            # Retry selected services
+            results = {}
+            if 'telegram' in services and manager.telegram:
+                try:
+                    results['telegram'] = await manager.telegram.send_post(post['text'], post['author'], manager._get_bluesky_post_url(post['uri']))
+                except Exception as e:
+                    logger.error(f"Telegram retry error: {e}")
+                    results['telegram'] = False
+            
+            if 'discord' in services and manager.discord:
+                try:
+                    results['discord'] = await manager.discord.send_post(post['text'], post['author'], manager._get_bluesky_post_url(post['uri']))
+                except Exception as e:
+                    logger.error(f"Discord retry error: {e}")
+                    results['discord'] = False
+            
+            if 'furaffinity' in services and manager.furaffinity:
+                try:
+                    journal_title = f"Cross-post from {post['author']}"
+                    journal_content = f"{post['text']}\n\n🔗 Original post: {manager._get_bluesky_post_url(post['uri'])}"
+                    results['furaffinity'] = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        manager.furaffinity.post_journal,
+                        journal_title,
+                        journal_content,
+                    )
+                except Exception as e:
+                    logger.error(f"FurAffinity retry error: {e}")
+                    results['furaffinity'] = False
+            
+            # Update webui records
+            webui.update_post_record(
+                post_uri,
+                telegram_sent=results.get('telegram', post_data['telegram_sent']),
+                discord_sent=results.get('discord', post_data['discord_sent']),
+                furaffinity_sent=results.get('furaffinity', post_data['furaffinity_sent']),
+            )
+            
+            logger.info(f"✅ Retry complete: {results}")
+            return {'success': True, 'results': results}
+        
+        else:
+            return {'error': 'Invalid request parameters', 'success': False}
+    
+    except Exception as e:
+        logger.error(f"Callback error: {e}", exc_info=True)
+        return {'error': str(e), 'success': False}
+        
         """Handle retry requests from WebUI"""
         try:
             # Find the post in history
