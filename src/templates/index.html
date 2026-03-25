@@ -259,6 +259,9 @@
             font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         .form-field input, .form-field select {
             padding: 10px 12px;
@@ -274,8 +277,10 @@
             border-color: var(--accent);
         }
         .form-field input[type="checkbox"] {
-            width: auto;
-            margin-right: 8px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            margin: 0;
         }
         .helper-text {
             font-size: 12px;
@@ -584,7 +589,7 @@
                     await loadConfig();
                     await loadLogs();
                 } else {
-                    alert('�� Login failed: ' + (data.error || 'Unknown error'));
+                    alert('❌ Login failed: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Login error:', error);
@@ -620,14 +625,47 @@
                 document.getElementById('blueskyHandle').value = cfg.bluesky_handle || '';
                 document.getElementById('blueskyTargetHandle').value = cfg.bluesky_target_handle || '';
                 document.getElementById('blueskyCheckInterval').value = cfg.bluesky_check_interval || '300';
+                
+                // Load telegram settings
+                document.getElementById('telegramEnabled').checked = cfg.telegram_enabled || false;
                 document.getElementById('telegramChannelId').value = cfg.telegram_channel_id || '';
+                toggleTelegram();
+                
+                // Load discord settings
+                document.getElementById('discordEnabled').checked = cfg.discord_enabled || false;
                 document.getElementById('discordChannelId').value = cfg.discord_channel_id || '';
+                toggleDiscord();
+                
+                // Load furaffinity settings
+                document.getElementById('furaffinityEnabled').checked = cfg.furaffinity_enabled || false;
                 if (cfg.furaffinity_username) {
                     document.getElementById('furaffinityUsername').value = cfg.furaffinity_username;
                 }
+                toggleFuraffinity();
             } catch (e) {
                 console.error('Config load error:', e);
             }
+        }
+
+        function toggleTelegram() {
+            const enabled = document.getElementById('telegramEnabled').checked;
+            document.getElementById('telegramBotToken').disabled = !enabled;
+            document.getElementById('telegramChannelId').disabled = !enabled;
+            console.debug(`Telegram toggled: ${enabled}`);
+        }
+
+        function toggleDiscord() {
+            const enabled = document.getElementById('discordEnabled').checked;
+            document.getElementById('discordBotToken').disabled = !enabled;
+            document.getElementById('discordChannelId').disabled = !enabled;
+            console.debug(`Discord toggled: ${enabled}`);
+        }
+
+        function toggleFuraffinity() {
+            const enabled = document.getElementById('furaffinityEnabled').checked;
+            document.getElementById('furaffinityUsername').disabled = !enabled;
+            document.getElementById('furaffinityPassword').disabled = !enabled;
+            console.debug(`FurAffinity toggled: ${enabled}`);
         }
 
         async function saveConfig() {
@@ -636,10 +674,13 @@
                 bluesky_password: document.getElementById('blueskyPassword').value,
                 bluesky_target_handle: document.getElementById('blueskyTargetHandle').value,
                 bluesky_check_interval: parseInt(document.getElementById('blueskyCheckInterval').value) || 300,
+                telegram_enabled: document.getElementById('telegramEnabled').checked,
                 telegram_bot_token: document.getElementById('telegramBotToken').value,
                 telegram_channel_id: document.getElementById('telegramChannelId').value,
+                discord_enabled: document.getElementById('discordEnabled').checked,
                 discord_bot_token: document.getElementById('discordBotToken').value,
                 discord_channel_id: document.getElementById('discordChannelId').value,
+                furaffinity_enabled: document.getElementById('furaffinityEnabled').checked,
                 furaffinity_username: document.getElementById('furaffinityUsername').value,
                 furaffinity_password: document.getElementById('furaffinityPassword').value
             });
@@ -829,16 +870,24 @@
             try {
                 for (const uri of uris) {
                     try {
+                        console.log(`📤 Crossposting URI: ${uri}`);
+                        console.log(`📤 Services: telegram, discord, furaffinity`);
+                        
                         const res = await apiCall('/api/posts/retry', 'POST', {
                             uri: uri,
                             services: ['telegram', 'discord', 'furaffinity']
                         });
+                        
+                        const data = await res.json();
+                        console.log(`📤 Response for ${uri}:`, data);
+                        
                         if (res.ok) {
                             successCount++;
                         } else {
                             failCount++;
                         }
                     } catch (e) {
+                        console.error(`❌ Error posting ${uri}:`, e);
                         failCount++;
                     }
                 }
@@ -919,7 +968,7 @@
                         </div>
                         <div class="form-field">
                             <label>App Password</label>
-                            <input type="password" id="blueskyPassword" placeholder="••••••••" autocomplete="new-password">
+                            <input type="password" id="blueskyPassword" placeholder="•••���••••" autocomplete="new-password">
                         </div>
                     </div>
                     <div class="form-row">
@@ -938,6 +987,14 @@
                     <h2>💬 Telegram</h2>
                     <div class="form-row">
                         <div class="form-field">
+                            <label>
+                                <input type="checkbox" id="telegramEnabled" onchange="toggleTelegram()">
+                                Enable Telegram
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field">
                             <label>Bot Token</label>
                             <input type="password" id="telegramBotToken" placeholder="123456:ABC-DEF..." autocomplete="new-password">
                         </div>
@@ -952,6 +1009,14 @@
                     <h2>🎮 Discord</h2>
                     <div class="form-row">
                         <div class="form-field">
+                            <label>
+                                <input type="checkbox" id="discordEnabled" onchange="toggleDiscord()">
+                                Enable Discord
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field">
                             <label>Bot Token</label>
                             <input type="password" id="discordBotToken" placeholder="MTA4NzQ1..." autocomplete="new-password">
                         </div>
@@ -964,6 +1029,14 @@
 
                 <div class="card">
                     <h2>🦊 FurAffinity</h2>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label>
+                                <input type="checkbox" id="furaffinityEnabled" onchange="toggleFuraffinity()">
+                                Enable FurAffinity
+                            </label>
+                        </div>
+                    </div>
                     <div class="form-row">
                         <div class="form-field">
                             <label>Username</label>
