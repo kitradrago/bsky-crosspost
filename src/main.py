@@ -153,17 +153,30 @@ class CrosspostManager:
                 self.bluesky_connected = True
                 logger.info("✅ Connected to Bluesky")
                 
-                # On first run, load posts from last 24 hours but don't post them
+                # On first run, load posts from last 7 days but don't post them
                 if not self.processed_posts:
-                    logger.info("First run detected - loading posts from last 24 hours without posting")
+                    logger.info("First run detected - loading posts from last 7 days without posting")
                     try:
-                        initial_posts = await self.bluesky.get_recent_posts(limit=50, hours_back=24)
+                        # Load initial posts (no time filter on API call, we'll filter locally)
+                        initial_posts = await self.bluesky.get_recent_posts(limit=50, hours_back=168)
                         
+                        logger.info(f"📊 Received {len(initial_posts)} posts from API")
+                        
+                        # Save all posts to activity log (even old ones)
                         for post in initial_posts:
                             self.processed_posts.add(post['uri'])
+                            
+                            # Log ALL posts to activity, regardless of age
+                            if self.webui:
+                                self.webui.save_post_record(
+                                    post,
+                                    telegram_sent=False,
+                                    discord_sent=False,
+                                    furaffinity_sent=False,
+                                )
                         
                         self._save_processed_posts()
-                        logger.info(f"Marked {len(initial_posts)} existing posts as processed")
+                        logger.info(f"✅ Marked {len(initial_posts)} existing posts as processed and logged to activity")
                     except Exception as e:
                         logger.error(f"Error loading initial posts: {e}")
         else:
@@ -384,7 +397,7 @@ async def main():
                 if not manager.bluesky_connected:
                     return {'error': 'Bluesky not connected', 'success': False}
                 
-                # Get recent posts from the specified time range
+                # Get recent posts from the specified time range (fetch more to ensure we get enough)
                 posts = await manager.bluesky.get_recent_posts(limit=50, hours_back=hours_back)
                 
                 if not posts:
@@ -392,6 +405,20 @@ async def main():
                     return {'success': True, 'posts_found': 0, 'message': f'No posts found in the last {hours_back} hours'}
                 
                 logger.info(f"✅ Found {len(posts)} posts in the last {hours_back} hours")
+                
+                # Save all discovered posts to activity log
+                for post in posts:
+                    if post['uri'] not in manager.processed_posts:
+                        manager.processed_posts.add(post['uri'])
+                        if webui:
+                            webui.save_post_record(
+                                post,
+                                telegram_sent=False,
+                                discord_sent=False,
+                                furaffinity_sent=False,
+                            )
+                
+                manager._save_processed_posts()
                 
                 return {
                     'success': True,
