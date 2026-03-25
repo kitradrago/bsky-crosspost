@@ -62,11 +62,7 @@ services:
 
 ### Unraid
 
-This application is available in the Unraid Community Applications store:
-1. Go to **Apps** tab
-2. Search for **Bluesky-Crosspost**
-3. Click **Install**
-4. Configure settings and start
+COMING SOON
 
 ## Configuration
 
