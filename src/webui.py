@@ -365,9 +365,11 @@ class WebUI:
     async def retry_post(self, request):
         """Retry posting to specific services"""
         if not self._is_authenticated(request):
+            logger.warning("❌ Retry request: Authentication failed")
             return web.json_response({'error': 'Unauthorized'}, status=401)
         
         if not self.cross_post_callback:
+            logger.error("❌ Retry request: Cross-post callback not available")
             return web.json_response({'error': 'Cross-post callback not available'}, status=500)
         
         try:
@@ -375,14 +377,21 @@ class WebUI:
             post_uri = data.get('uri')
             services = data.get('services', ['telegram', 'discord', 'furaffinity'])
             
+            logger.info(f"🔄 RETRY_POST endpoint called")
+            logger.info(f"📌 Post URI: {post_uri}")
+            logger.info(f"📌 Services: {services}")
+            
             if not post_uri:
+                logger.error("❌ Retry request: Missing post URI")
                 return web.json_response({'error': 'Missing post URI'}, status=400)
             
-            logger.info(f"🔄 Retrying post {post_uri} for services: {services}")
+            logger.info(f"🔄 Calling cross_post_callback with post_uri={post_uri}")
             result = await self.cross_post_callback(post_uri=post_uri, services=services)
+            
+            logger.info(f"✅ Callback returned: {result}")
             return web.json_response(result)
         except Exception as e:
-            logger.error(f"Retry error: {e}", exc_info=True)
+            logger.error(f"❌ Retry error: {e}", exc_info=True)
             return web.json_response({'error': str(e)}, status=500)
     
     async def manual_check_posts(self, request):
@@ -526,7 +535,7 @@ class WebUI:
                 logger.error(f"❌ openssl failed")
                 return None, None
         except Exception as e:
-            logger.error(f"�� Certificate error: {e}")
+            logger.error(f"❌ Certificate error: {e}")
             return None, None
     
     def get_html_template(self) -> str:
