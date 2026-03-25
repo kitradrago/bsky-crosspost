@@ -3,9 +3,7 @@ FROM python:alpine
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache gcc
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
