@@ -195,6 +195,7 @@
             gap: 10px;
             margin-bottom: 30px;
             border-bottom: 2px solid var(--border-color);
+            overflow-x: auto;
         }
         .tab-btn {
             padding: 15px 20px;
@@ -207,6 +208,7 @@
             transition: all 0.3s;
             border-bottom: 3px solid transparent;
             margin-bottom: -2px;
+            white-space: nowrap;
         }
         .tab-btn:hover {
             color: var(--accent);
@@ -234,6 +236,8 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 25px;
+            flex-wrap: wrap;
+            gap: 15px;
         }
         .card h2 {
             color: var(--text-primary);
@@ -295,6 +299,11 @@
             transform: translateY(-2px);
             box-shadow: 0 8px 16px rgba(102,126,234,0.4);
         }
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
         .btn-secondary {
             background: var(--bg-secondary);
             color: var(--text-primary);
@@ -307,6 +316,13 @@
         .btn-small {
             padding: 6px 12px;
             font-size: 12px;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #218838;
         }
         .alert {
             padding: 15px;
@@ -323,6 +339,11 @@
             background: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+        .alert.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
         }
         .stats-grid {
             display: grid;
@@ -364,6 +385,81 @@
             word-break: break-word;
             line-height: 1.4;
         }
+        .post-item {
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        .post-item:hover {
+            border-color: var(--accent);
+        }
+        .post-item.selected {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent-dark);
+        }
+        .post-item input[type="checkbox"] {
+            margin-right: 10px;
+            cursor: pointer;
+        }
+        .post-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+        .post-text {
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+        .post-meta {
+            font-size: 12px;
+            opacity: 0.7;
+            display: flex;
+            gap: 15px;
+        }
+        .posts-container {
+            margin-top: 20px;
+        }
+        .post-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .posts-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .manual-check-controls {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+        .manual-check-controls .form-field {
+            flex: 1;
+            min-width: 200px;
+        }
         @media (max-width: 768px) {
             .navbar {
                 flex-direction: column;
@@ -380,11 +476,20 @@
                 align-items: flex-start;
                 gap: 15px;
             }
+            .manual-check-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .manual-check-controls .form-field {
+                min-width: auto;
+            }
         }
     </style>
     <script>
         let authToken = localStorage.getItem('authToken');
         let refreshInterval = null;
+        let manualCheckPosts = [];
+        let selectedPostUris = new Set();
 
         window.onload = async function() {
             loadTheme();
@@ -479,7 +584,7 @@
                     await loadConfig();
                     await loadLogs();
                 } else {
-                    alert('❌ Login failed: ' + (data.error || 'Unknown error'));
+                    alert('�� Login failed: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Login error:', error);
@@ -582,6 +687,182 @@
                 console.error('Logs load error:', e);
             }
         }
+
+        async function performManualCheck() {
+            const hoursBack = parseInt(document.getElementById('manualCheckHours').value) || 24;
+            
+            if (hoursBack < 1 || hoursBack > 168) {
+                alert('Hours must be between 1 and 168');
+                return;
+            }
+
+            const btn = document.getElementById('manualCheckBtn');
+            const container = document.getElementById('manualCheckResults');
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Searching...';
+            container.innerHTML = '<div class="posts-loading"><div class="loading-spinner"></div> Searching for posts...</div>';
+            selectedPostUris.clear();
+
+            try {
+                const res = await apiCall('/api/posts/manual-check', 'POST', {hours_back: hoursBack});
+                const data = await res.json();
+
+                if (res.ok && data.posts_found > 0) {
+                    // Fetch the actual posts to display
+                    const postsRes = await apiCall('/api/posts?limit=100');
+                    const postsData = await postsRes.json();
+                    
+                    // Filter posts within the time range
+                    const cutoffTime = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+                    const filteredPosts = postsData.posts.filter(p => new Date(p.created_at) >= cutoffTime);
+
+                    displayManualCheckResults(filteredPosts, data);
+                } else {
+                    container.innerHTML = '<div class="alert info">ℹ️ ' + (data.message || 'No posts found') + '</div>';
+                }
+            } catch (error) {
+                console.error('Manual check error:', error);
+                container.innerHTML = '<div class="alert error">❌ Error: ' + error.message + '</div>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Search Posts';
+            }
+        }
+
+        function displayManualCheckResults(posts, checkData) {
+            const container = document.getElementById('manualCheckResults');
+            container.innerHTML = '';
+
+            if (!posts || posts.length === 0) {
+                container.innerHTML = '<div class="alert info">ℹ️ No posts found in that timeframe</div>';
+                return;
+            }
+
+            const header = document.createElement('div');
+            header.className = 'alert info';
+            header.textContent = `📦 Found ${posts.length} posts - Select which ones to crosspost`;
+            container.appendChild(header);
+
+            const postsDiv = document.createElement('div');
+            postsDiv.className = 'posts-container';
+
+            posts.forEach(post => {
+                const postEl = document.createElement('div');
+                postEl.className = 'post-item';
+                postEl.innerHTML = `
+                    <div class="post-header">
+                        <input type="checkbox" value="${post.uri}" onchange="togglePostSelection(this)">
+                        <strong>${post.author}</strong>
+                    </div>
+                    <div class="post-text">${escapeHtml(post.text)}</div>
+                    <div class="post-meta">
+                        <span>📅 ${new Date(post.created_at).toLocaleString()}</span>
+                        <span>${post.telegram_sent ? '✅ Telegram' : '⏳ Telegram'}</span>
+                        <span>${post.discord_sent ? '✅ Discord' : '⏳ Discord'}</span>
+                        <span>${post.furaffinity_sent ? '✅ FA' : '⏳ FA'}</span>
+                    </div>
+                `;
+                postsDiv.appendChild(postEl);
+            });
+
+            container.appendChild(postsDiv);
+
+            const footer = document.createElement('div');
+            footer.style.marginTop = '20px';
+            footer.innerHTML = `
+                <button class="btn btn-secondary btn-small" onclick="selectAllPosts()">✓ Select All</button>
+                <button class="btn btn-secondary btn-small" onclick="deselectAllPosts()">✗ Deselect All</button>
+                <button class="btn btn-success" onclick="crosspostSelectedPosts()">📤 Crosspost Selected (<span id="selectedCount">0</span>)</button>
+            `;
+            container.appendChild(footer);
+        }
+
+        function togglePostSelection(checkbox) {
+            const uri = checkbox.value;
+            if (checkbox.checked) {
+                selectedPostUris.add(uri);
+                checkbox.parentElement.parentElement.classList.add('selected');
+            } else {
+                selectedPostUris.delete(uri);
+                checkbox.parentElement.parentElement.classList.remove('selected');
+            }
+            updateSelectedCount();
+        }
+
+        function selectAllPosts() {
+            document.querySelectorAll('#manualCheckResults input[type="checkbox"]').forEach(cb => {
+                if (!cb.checked) {
+                    cb.checked = true;
+                    togglePostSelection(cb);
+                }
+            });
+        }
+
+        function deselectAllPosts() {
+            document.querySelectorAll('#manualCheckResults input[type="checkbox"]').forEach(cb => {
+                if (cb.checked) {
+                    cb.checked = false;
+                    togglePostSelection(cb);
+                }
+            });
+        }
+
+        function updateSelectedCount() {
+            document.getElementById('selectedCount').textContent = selectedPostUris.size;
+        }
+
+        async function crosspostSelectedPosts() {
+            if (selectedPostUris.size === 0) {
+                alert('Select at least one post');
+                return;
+            }
+
+            const uris = Array.from(selectedPostUris);
+            const btn = document.querySelector('button[onclick="crosspostSelectedPosts()"]');
+            btn.disabled = true;
+            btn.textContent = '⏳ Crossposting...';
+
+            let successCount = 0;
+            let failCount = 0;
+
+            try {
+                for (const uri of uris) {
+                    try {
+                        const res = await apiCall('/api/posts/retry', 'POST', {
+                            uri: uri,
+                            services: ['telegram', 'discord', 'furaffinity']
+                        });
+                        if (res.ok) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    } catch (e) {
+                        failCount++;
+                    }
+                }
+
+                alert(`✅ Crossposted ${successCount} posts${failCount > 0 ? `, ${failCount} failed` : ''}`);
+                await performManualCheck();
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📤 Crosspost Selected';
+            }
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
     </script>
 </head>
 <body>
@@ -622,6 +903,7 @@
         <div class="container">
             <div class="tabs">
                 <button class="tab-btn active" onclick="showTab(event, 'setup')">⚙️ Setup</button>
+                <button class="tab-btn" onclick="showTab(event, 'manual')">🔍 Manual Check</button>
                 <button class="tab-btn" onclick="showTab(event, 'activity')">📊 Activity</button>
                 <button class="tab-btn" onclick="showTab(event, 'logs')">📋 Logs</button>
                 <button class="tab-btn" onclick="showTab(event, 'admin')">🔐 Admin</button>
@@ -696,6 +978,23 @@
 
                 <button class="btn btn-primary" onclick="saveConfig()">💾 Save Settings</button>
                 <div id="setupAlert"></div>
+            </div>
+
+            <div class="page" id="manualPage">
+                <div class="card">
+                    <h2>🔍 Manual Post Check</h2>
+                    <p>Search for posts from the past N hours and manually crosspost them</p>
+                    
+                    <div class="manual-check-controls">
+                        <div class="form-field">
+                            <label>Hours to Search (1-168)</label>
+                            <input type="number" id="manualCheckHours" value="24" min="1" max="168">
+                        </div>
+                        <button class="btn btn-primary" id="manualCheckBtn" onclick="performManualCheck()">🔍 Search Posts</button>
+                    </div>
+
+                    <div id="manualCheckResults"></div>
+                </div>
             </div>
 
             <div class="page" id="activityPage">

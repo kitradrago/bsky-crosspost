@@ -526,7 +526,7 @@ class WebUI:
                 logger.error(f"❌ openssl failed")
                 return None, None
         except Exception as e:
-            logger.error(f"❌ Certificate error: {e}")
+            logger.error(f"�� Certificate error: {e}")
             return None, None
     
     def get_html_template(self) -> str:

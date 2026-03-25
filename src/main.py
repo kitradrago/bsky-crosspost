@@ -391,32 +391,13 @@ async def main():
                     logger.warning(f"⚠️  No posts found in the last {hours_back} hours")
                     return {'success': True, 'posts_found': 0, 'message': f'No posts found in the last {hours_back} hours'}
                 
-                logger.info(f"✅ Found {len(posts)} posts in the last {hours_back} hours, processing...")
-                
-                processed_count = 0
-                for post in reversed(posts):
-                    # Skip replies
-                    if manager._is_reply(post):
-                        logger.info(f"⏭️  Skipping reply from {post['author']}")
-                        continue
-                    
-                    # Skip already processed posts
-                    if post['uri'] in manager.processed_posts:
-                        logger.debug(f"⏭️  Post already processed: {post['text'][:50]}...")
-                        continue
-                    
-                    logger.info(f"📤 Processing new post from manual check: {post['text'][:50]}...")
-                    manager.processed_posts.add(post['uri'])
-                    await manager._cross_post(post)
-                    processed_count += 1
-                
-                manager._save_processed_posts()
+                logger.info(f"✅ Found {len(posts)} posts in the last {hours_back} hours")
                 
                 return {
                     'success': True,
                     'posts_found': len(posts),
-                    'posts_processed': processed_count,
-                    'message': f'Found {len(posts)} posts, processed {processed_count} new posts'
+                    'posts_processed': 0,
+                    'message': f'Found {len(posts)} posts - select which ones to crosspost from the UI'
                 }
             
             # RETRY MODE - retry specific post
